@@ -1,0 +1,45 @@
+---
+Language:        Cpp
+BasedOnStyle:    Google
+
+# K&R Braces
+BraceWrapping:
+  AfterClass:      false
+  AfterControlStatement: false
+  AfterEnum:       false
+  AfterFunction:   false
+  AfterNamespace:  false
+  AfterStruct:     false
+  AfterUnion:      false
+  BeforeCatch:     false
+  BeforeElse:      false
+  IndentBraces:    false
+
+# Indentation
+IndentWidth:     4
+TabWidth:        4
+UseTab:          Never
+
+# Column width and alignment
+ColumnLimit:     100
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+
+# Spaces and Padding
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpaceBeforeSquareBrackets: false
+
+# Pointer and Reference alignment
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# Other Settings
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: All
+KeepEmptyLinesAtTheStartOfBlocks: false
+SortIncludes: CaseInsensitive
+IncludeIsMainRegex: '(test|main)\.h'
+...

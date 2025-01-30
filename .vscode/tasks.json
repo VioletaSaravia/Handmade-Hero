@@ -8,11 +8,13 @@
                 "/Zi",
                 "/EHsc",
                 "/nologo",
+                "/std:c++20",
                 "/Fe${workspaceFolder}\\build\\${fileBasenameNoExtension}.exe",
                 "/Fd${workspaceFolder}\\build\\vc140.pdb",
                 "/Fo${workspaceFolder}\\build\\${fileBasenameNoExtension}.obj",
                 "${file}",
-                "user32.lib"
+                "user32.lib",
+                "gdi32.lib"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/data"
