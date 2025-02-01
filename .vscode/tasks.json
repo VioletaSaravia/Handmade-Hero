@@ -14,7 +14,8 @@
                 "/Fo${workspaceFolder}\\build\\${fileBasenameNoExtension}.obj",
                 "${file}",
                 "user32.lib",
-                "gdi32.lib"
+                "gdi32.lib",
+                "Xinput.lib"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/data"

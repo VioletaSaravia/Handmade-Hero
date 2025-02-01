@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <Windows.h>
+#include <Xinput.h>
 
 #define internal static
 #define local_persist static
@@ -20,7 +21,7 @@ typedef unsigned char u8;
 typedef double f64;
 typedef float  f32;
 
-global_variable bool Running;
+global_variable bool Running = true;
 
 struct Win32OffscreenBuffer {
     BITMAPINFO Info;
@@ -102,6 +103,10 @@ internal void Win32DisplayBuffer(Win32OffscreenBuffer buffer, HDC deviceContext,
     };
 }
 
+// TODO(violeta): Dynamic loading of xinput. Not necessary in 2025?
+// DWORD XInputGetState(DWORD dwUserIndex, XINPUT_STATE *pState);
+// DWORD XInputSetState(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration);
+
 LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     LRESULT result = 0;
 
@@ -139,6 +144,35 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
             OutputDebugStringA("WM_ACTIVATEAPP\n");
         } break;
 
+        case WM_SYSKEYDOWN:
+        case WM_SYSKEYUP:
+        case WM_KEYDOWN:
+        case WM_KEYUP: {
+            u32  vKCode  = wParam;
+            bool wasDown = (lParam & (1 << 30)) != 0;
+            bool isDown  = (lParam & (1 << 31)) == 0;
+
+            switch (vKCode) {
+                case 'W' | VK_UP:
+                    break;
+
+                case 'A' | VK_LEFT:
+                    break;
+
+                case 'S' | VK_DOWN:
+                    break;
+
+                case 'D' | VK_RIGHT:
+                    break;
+
+                case VK_SPACE:
+                    break;
+
+                default:
+                    break;
+            }
+        } break;
+
         default: {
             result = DefWindowProcA(window, message, wParam, lParam);
         } break;
@@ -148,8 +182,6 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
 }
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
-    // MessageBoxA(0, "Hello world!", "Handmade Hero", MB_OK | MB_ICONINFORMATION);
-
     Win32ResizeDIBSection(&BackBuffer, 1280, 720);
 
     WNDCLASSA windowClass = {
@@ -176,7 +208,6 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     int xOffset = 0;
     int yOffset = 0;
 
-    Running = true;
     while (Running) {
         MSG message;
 
@@ -191,7 +222,36 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             DispatchMessageA(&message);
         }
 
+        for (DWORD controllerIndex = 0; controllerIndex < XUSER_MAX_COUNT; controllerIndex++) {
+            XINPUT_STATE controllerState = {};
+            if (XInputGetState(controllerIndex, &controllerState) != ERROR_SUCCESS) {
+                // TODO(violeta): Controller not connected
+                continue;
+            }
+
+            auto pad = &controllerState.Gamepad;
+
+            bool up        = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+            bool down      = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+            bool left      = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+            bool right     = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+            bool start     = (pad->wButtons & XINPUT_GAMEPAD_START);
+            bool back      = (pad->wButtons & XINPUT_GAMEPAD_BACK);
+            bool shoulderL = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+            bool shoulderR = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+            bool btnA      = (pad->wButtons & XINPUT_GAMEPAD_A);
+            bool btnB      = (pad->wButtons & XINPUT_GAMEPAD_B);
+            bool btnX      = (pad->wButtons & XINPUT_GAMEPAD_X);
+            bool btnY      = (pad->wButtons & XINPUT_GAMEPAD_Y);
+
+            i16 stickLX = pad->sThumbLX;
+            i16 stickLY = pad->sThumbLY;
+            i16 stickRX = pad->sThumbRX;
+            i16 stickRY = pad->sThumbRY;
+        }
+
         RenderWeirdGradient(&BackBuffer, xOffset, yOffset);
+
         auto dim = GetWindowDimension(window);
         Win32DisplayBuffer(BackBuffer, deviceContext, dim.Width, dim.Height);
         ReleaseDC(window, deviceContext);
