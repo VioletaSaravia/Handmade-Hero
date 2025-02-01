@@ -20,23 +20,39 @@ typedef unsigned char u8;
 typedef double f64;
 typedef float  f32;
 
-global_variable bool       Running;
-global_variable BITMAPINFO BitmapInfo;
-global_variable void      *BitmapMemory;
-global_variable int        BitmapWidth, BitmapHeight;
-global_variable int        BytesPerPixel = 4;
+global_variable bool Running;
 
-internal void RenderWeirdGradient(int xOffset, int yOffset) {
-    int width  = BitmapWidth;
-    int height = BitmapHeight;
+struct Win32OffscreenBuffer {
+    BITMAPINFO Info;
+    void      *Memory;
+    int        Width, Height;
+    int        BytesPerPixel;
+};
 
-    int pitch = width * BytesPerPixel;
-    u8 *row   = (u8 *)BitmapMemory;
+global_variable Win32OffscreenBuffer BackBuffer;
+
+struct Win32WindowDimension {
+    int Width, Height;
+};
+
+Win32WindowDimension GetWindowDimension(HWND window) {
+    RECT clientRect;  // Rect of "client" (drawable area)
+    GetClientRect(window, &clientRect);
+    return {clientRect.right - clientRect.left, clientRect.bottom - clientRect.top};
+}
+
+internal void RenderWeirdGradient(Win32OffscreenBuffer *buffer, int xOffset, int yOffset) {
+    int width  = buffer->Width;
+    int height = buffer->Height;
+
+    int stride = width * buffer->BytesPerPixel;
+    u8 *row    = (u8 *)buffer->Memory;
     for (int y = 0; y < height; y++) {
         u32 *pixel = (u32 *)row;
         for (int x = 0; x < width; x++) {
-            /*      0  1  2  3
-            Pixel: BB GG RR --
+            /*
+            Pixel: BB GG RR -- (4 bytes)
+                   0  1  2  3
             */
             u8 blue  = x + xOffset;
             u8 green = y + yOffset;
@@ -45,42 +61,45 @@ internal void RenderWeirdGradient(int xOffset, int yOffset) {
             *pixel++ = blue | (green << 8) | (red << 16);
         }
 
-        row += pitch;
+        row += stride;
     }
 }
 
 // DIB = Device-independent bitmap
-internal void Win32ResizeDIBSection(int width, int height) {
-    if (BitmapMemory) {
-        VirtualFree(BitmapMemory, 0, MEM_RELEASE);
+internal void Win32ResizeDIBSection(Win32OffscreenBuffer *buffer, int width, int height) {
+    if (buffer->Memory) {
+        VirtualFree(buffer->Memory, 0, MEM_RELEASE);
     }
 
-    BitmapWidth  = width;
-    BitmapHeight = height;
+    buffer->Width         = width;
+    buffer->Height        = height;
+    buffer->BytesPerPixel = 4;
 
-    BitmapInfo = {.bmiHeader = {.biSize          = sizeof(BitmapInfo.bmiHeader),
-                                .biWidth         = BitmapWidth,
-                                .biHeight        = -BitmapHeight,
-                                .biPlanes        = 1,
-                                .biBitCount      = 32,  // 4 byte align
-                                .biCompression   = BI_RGB,
-                                .biSizeImage     = 0,
-                                .biXPelsPerMeter = 0,  // TODO(violeta): can this be 0?
-                                .biYPelsPerMeter = 0,
-                                .biClrUsed       = 0,
-                                .biClrImportant  = 0}};
+    buffer->Info = {
+        .bmiHeader = {.biSize  = sizeof(buffer->Info.bmiHeader),
+                      .biWidth = buffer->Width,
+                      // Negative height tells Sindows to treat the window's y axis as top-down
+                      .biHeight        = -buffer->Height,
+                      .biPlanes        = 1,
+                      .biBitCount      = 32,  // 4 byte align
+                      .biCompression   = BI_RGB,
+                      .biSizeImage     = 0,
+                      .biXPelsPerMeter = 0,
+                      .biYPelsPerMeter = 0,
+                      .biClrUsed       = 0,
+                      .biClrImportant  = 0}};
 
-    int bitmapMemorySize = (BitmapWidth * BitmapHeight) * BytesPerPixel;
-    BitmapMemory         = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
+    int bitmapMemorySize = (buffer->Width * buffer->Height) * buffer->BytesPerPixel;
+    buffer->Memory       = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
 }
 
-internal void Win32UpdateWindow(HDC deviceContext, RECT *clientRect, int x, int y, int width,
-                                int height) {
-    int windowWidth  = clientRect->right - clientRect->left;
-    int windowHeight = clientRect->bottom - clientRect->top;
-
-    int ok = StretchDIBits(deviceContext, 0, 0, windowWidth, windowHeight, 0, 0, BitmapWidth,
-                           BitmapHeight, BitmapMemory, &BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+internal void Win32DisplayBuffer(Win32OffscreenBuffer buffer, HDC deviceContext, int windowWidth,
+                                 int windowHeight) {
+    // TODO(violeta): Aspect ratio correction and stretch modes
+    if (!StretchDIBits(deviceContext, 0, 0, windowWidth, windowHeight, 0, 0, buffer.Width,
+                       buffer.Height, buffer.Memory, &buffer.Info, DIB_RGB_COLORS, SRCCOPY)) {
+        // TODO: log
+    };
 }
 
 LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -89,13 +108,6 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
     switch (message) {
         case WM_SIZE:  // Window size changes
         {
-            RECT clientRect;  // Rect of "client" (drawable area)
-            GetClientRect(window, &clientRect);
-            int width  = clientRect.right - clientRect.left;
-            int height = clientRect.bottom - clientRect.top;
-
-            Win32ResizeDIBSection(width, height);
-            OutputDebugStringA("WM_SIZE\n");
         } break;
 
         case WM_DESTROY:  // Window destroyed
@@ -116,11 +128,8 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
             PAINTSTRUCT paint;
             HDC         deviceContext = BeginPaint(window, &paint);
 
-            RECT clientRect;  // Rect of "client" (drawable area)
-            GetClientRect(window, &clientRect);
-            Win32UpdateWindow(deviceContext, &clientRect, paint.rcPaint.left, paint.rcPaint.top,
-                              paint.rcPaint.right - paint.rcPaint.left,
-                              paint.rcPaint.bottom - paint.rcPaint.top);
+            auto dim = GetWindowDimension(window);
+            Win32DisplayBuffer(BackBuffer, deviceContext, dim.Width, dim.Height);
 
             EndPaint(window, &paint);
         } break;
@@ -141,9 +150,10 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
     // MessageBoxA(0, "Hello world!", "Handmade Hero", MB_OK | MB_ICONINFORMATION);
 
+    Win32ResizeDIBSection(&BackBuffer, 1280, 720);
+
     WNDCLASSA windowClass = {
-        // TODO(violeta): Are these necessary?
-        .style         = CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
+        .style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
         .lpfnWndProc   = Win32MainWindowCallback,
         .hInstance     = instance,
         .hIcon         = 0,
@@ -161,6 +171,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     if (!window) {
         // TODO log
     }
+    HDC deviceContext = GetDC(window);
 
     int xOffset = 0;
     int yOffset = 0;
@@ -180,17 +191,13 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             DispatchMessageA(&message);
         }
 
-        RenderWeirdGradient(xOffset, yOffset);
-
-        HDC  deviceContext = GetDC(window);
-        RECT clientRect;
-        GetClientRect(window, &clientRect);
-        int windowWidth  = clientRect.right - clientRect.left;
-        int windowHeight = clientRect.bottom - clientRect.top;
-        Win32UpdateWindow(deviceContext, &clientRect, 0, 0, windowWidth, windowHeight);
+        RenderWeirdGradient(&BackBuffer, xOffset, yOffset);
+        auto dim = GetWindowDimension(window);
+        Win32DisplayBuffer(BackBuffer, deviceContext, dim.Width, dim.Height);
         ReleaseDC(window, deviceContext);
 
         ++xOffset;
+        ++yOffset;
     }
 
     return (0);
