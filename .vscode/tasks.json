@@ -8,6 +8,7 @@
                 "/Zi",
                 "/EHsc",
                 "/nologo",
+                //"/Wall",
                 "/std:c++20",
                 "/Fe${workspaceFolder}\\build\\${fileBasenameNoExtension}.exe",
                 "/Fd${workspaceFolder}\\build\\vc140.pdb",
@@ -15,7 +16,8 @@
                 "${file}",
                 "user32.lib",
                 "gdi32.lib",
-                "Xinput.lib"
+                "Xinput.lib",
+                "Dsound.lib"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/data"

@@ -1,3 +1,4 @@
+#include <dsound.h>
 #include <stdint.h>
 #include <Windows.h>
 #include <Xinput.h>
@@ -10,6 +11,8 @@ typedef int64_t i64;
 typedef int32_t i32;
 typedef int16_t i16;
 typedef int8_t  i8;
+
+typedef int32_t b32;
 
 typedef uint64_t u64;
 typedef uint32_t u32;
@@ -24,13 +27,60 @@ typedef float  f32;
 global_variable bool Running = true;
 
 struct Win32OffscreenBuffer {
-    BITMAPINFO Info;
     void      *Memory;
     int        Width, Height;
     int        BytesPerPixel;
+    BITMAPINFO Info;
 };
 
 global_variable Win32OffscreenBuffer BackBuffer;
+
+internal void Win32InitDSound(HWND window, u32 bufferSize, u32 samplesPerSecond) {
+    LPDIRECTSOUND directSound;
+    // TODO(violeta): Why even use this macro?
+    if (!SUCCEEDED(DirectSoundCreate(0, &directSound, 0))) {
+        return;
+    }
+
+    if (!SUCCEEDED(directSound->SetCooperativeLevel(window, DSSCL_PRIORITY))) {
+        return;
+    };
+
+    LPDIRECTSOUNDBUFFER primaryBuffer     = {};
+    DSBUFFERDESC        bufferDescription = {
+               .dwSize  = sizeof(DSBUFFERDESC),
+               .dwFlags = DSBCAPS_PRIMARYBUFFER,
+    };
+    if (!SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &primaryBuffer, 0))) {
+        return;
+    };
+
+    WAVEFORMATEX waveFormat = {
+        .wFormatTag      = WAVE_FORMAT_PCM,
+        .nChannels       = 2,
+        .nSamplesPerSec  = samplesPerSecond,
+        .nAvgBytesPerSec = samplesPerSecond * ((2 * 16) / 8),
+        .nBlockAlign     = (2 * 16) / 8,
+        .wBitsPerSample  = 16,
+        .cbSize          = 0,
+    };
+
+    if (!SUCCEEDED(primaryBuffer->SetFormat(&waveFormat))) {
+        return;
+    };
+
+    // Sec buffer
+    LPDIRECTSOUNDBUFFER secondaryBuffer    = {};
+    DSBUFFERDESC        bufferDescription2 = {
+               .dwSize        = sizeof(DSBUFFERDESC),
+               .dwFlags       = DSBCAPS_GLOBALFOCUS,  // TODO(violeta): Global focus y/n?
+               .dwBufferBytes = bufferSize,
+               .lpwfxFormat   = &waveFormat,  // TODO primary too?
+    };
+    if (!SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription2, &secondaryBuffer, 0))) {
+        return;
+    };
+}
 
 struct Win32WindowDimension {
     int Width, Height;
@@ -55,11 +105,11 @@ internal void RenderWeirdGradient(Win32OffscreenBuffer *buffer, int xOffset, int
             Pixel: BB GG RR -- (4 bytes)
                    0  1  2  3
             */
-            u8 blue  = x + xOffset;
-            u8 green = y + yOffset;
+            u8 blue  = u8(x + xOffset);
+            u8 green = u8(y + yOffset);
             u8 red   = 0;
 
-            *pixel++ = blue | (green << 8) | (red << 16);
+            *pixel++ = u32(blue | (green << 8) | (red << 16));
         }
 
         row += stride;
@@ -79,7 +129,7 @@ internal void Win32ResizeDIBSection(Win32OffscreenBuffer *buffer, int width, int
     buffer->Info = {
         .bmiHeader = {.biSize  = sizeof(buffer->Info.bmiHeader),
                       .biWidth = buffer->Width,
-                      // Negative height tells Sindows to treat the window's y axis as top-down
+                      // Negative height tells Windows to treat the window's y axis as top-down
                       .biHeight        = -buffer->Height,
                       .biPlanes        = 1,
                       .biBitCount      = 32,  // 4 byte align
@@ -90,8 +140,8 @@ internal void Win32ResizeDIBSection(Win32OffscreenBuffer *buffer, int width, int
                       .biClrUsed       = 0,
                       .biClrImportant  = 0}};
 
-    int bitmapMemorySize = (buffer->Width * buffer->Height) * buffer->BytesPerPixel;
-    buffer->Memory       = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
+    u64 bitmapMemorySize = u64(buffer->Width * buffer->Height) * buffer->BytesPerPixel;
+    buffer->Memory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 }
 
 internal void Win32DisplayBuffer(Win32OffscreenBuffer buffer, HDC deviceContext, int windowWidth,
@@ -148,9 +198,10 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
         case WM_SYSKEYUP:
         case WM_KEYDOWN:
         case WM_KEYUP: {
-            u32  vKCode  = wParam;
-            bool wasDown = (lParam & (1 << 30)) != 0;
-            bool isDown  = (lParam & (1 << 31)) == 0;
+            u64 vKCode  = wParam;
+            b32 wasDown = (lParam & (1 << 30));
+            b32 isDown  = (lParam & (1 << 31)) == 0;
+            b32 altDown = lParam & (1 << 29);
 
             switch (vKCode) {
                 case 'W' | VK_UP:
@@ -164,6 +215,10 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
 
                 case 'D' | VK_RIGHT:
                     break;
+
+                case VK_F4: {
+                    Running = !altDown;
+                } break;
 
                 case VK_SPACE:
                     break;
@@ -204,6 +259,9 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         // TODO log
     }
     HDC deviceContext = GetDC(window);
+
+    i32 sampleRate = 48 * 1000;
+    Win32InitDSound(window, sampleRate * sizeof(i16) * 2, sampleRate);
 
     int xOffset = 0;
     int yOffset = 0;
