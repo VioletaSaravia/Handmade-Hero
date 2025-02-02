@@ -24,8 +24,6 @@ typedef unsigned char u8;
 typedef double f64;
 typedef float  f32;
 
-global_variable bool Running = true;
-
 struct Win32OffscreenBuffer {
     void      *Memory;
     int        Width, Height;
@@ -33,7 +31,9 @@ struct Win32OffscreenBuffer {
     BITMAPINFO Info;
 };
 
+global_variable bool                 Running = true;
 global_variable Win32OffscreenBuffer BackBuffer;
+global_variable LPDIRECTSOUNDBUFFER  SecondarySoundBuffer;
 
 internal void Win32InitDSound(HWND window, u32 bufferSize, u32 samplesPerSecond) {
     LPDIRECTSOUND directSound;
@@ -69,15 +69,14 @@ internal void Win32InitDSound(HWND window, u32 bufferSize, u32 samplesPerSecond)
         return;
     };
 
-    // Sec buffer
-    LPDIRECTSOUNDBUFFER secondaryBuffer    = {};
-    DSBUFFERDESC        bufferDescription2 = {
-               .dwSize        = sizeof(DSBUFFERDESC),
-               .dwFlags       = DSBCAPS_GLOBALFOCUS,  // TODO(violeta): Global focus y/n?
-               .dwBufferBytes = bufferSize,
-               .lpwfxFormat   = &waveFormat,  // TODO primary too?
+    // Secondary buffer
+    DSBUFFERDESC bufferDescription2 = {
+        .dwSize        = sizeof(DSBUFFERDESC),
+        .dwFlags       = DSBCAPS_GLOBALFOCUS,  // TODO(violeta): Global focus y/n?
+        .dwBufferBytes = bufferSize,
+        .lpwfxFormat   = &waveFormat,  // TODO primary too?
     };
-    if (!SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription2, &secondaryBuffer, 0))) {
+    if (!SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription2, &SecondarySoundBuffer, 0))) {
         return;
     };
 }
@@ -152,10 +151,6 @@ internal void Win32DisplayBuffer(Win32OffscreenBuffer buffer, HDC deviceContext,
         // TODO: log
     };
 }
-
-// TODO(violeta): Dynamic loading of xinput. Not necessary in 2025?
-// DWORD XInputGetState(DWORD dwUserIndex, XINPUT_STATE *pState);
-// DWORD XInputSetState(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration);
 
 LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     LRESULT result = 0;
@@ -260,11 +255,21 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     }
     HDC deviceContext = GetDC(window);
 
-    i32 sampleRate = 48 * 1000;
-    Win32InitDSound(window, sampleRate * sizeof(i16) * 2, sampleRate);
+    i32 samplesPerSecond = 48 * 1000;
+    u32 bytesPerSample   = sizeof(i16) * 2;
+    u32 bufferSize       = samplesPerSecond * bytesPerSample;
+    Win32InitDSound(window, bufferSize, samplesPerSecond);
+    SecondarySoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
-    int xOffset = 0;
-    int yOffset = 0;
+    // ----- Test variables
+    i32 toneHz             = 256;
+    u32 runningSampleIndex = 0;
+    i32 sqPeriod           = samplesPerSecond / toneHz;
+    i32 volume             = 4000;
+
+    i32 xOffset = 0;
+    i32 yOffset = 0;
+    // -----
 
     while (Running) {
         MSG message;
@@ -309,6 +314,49 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         }
 
         RenderWeirdGradient(&BackBuffer, xOffset, yOffset);
+
+        // ===== SOUND
+        DWORD playCursor, writeCursor;
+        if (!SUCCEEDED(SecondarySoundBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
+            // TODO: Log
+        }
+
+        DWORD byteToLock   = runningSampleIndex * bytesPerSample % bufferSize;
+        DWORD bytesToWrite = byteToLock > playCursor ? bufferSize - byteToLock + playCursor
+                                                     : playCursor - byteToLock;
+
+        void *region1, *region2;
+        DWORD region1Size, region2Size;
+        if (!SUCCEEDED(SecondarySoundBuffer->Lock(byteToLock, bytesToWrite, &region1, &region1Size,
+                                                  &region2, &region2Size, 0))) {
+            // TODO: Log
+        };
+
+        // TODO: assert region1/2Size are valid
+        i16  *sampleOut          = (i16 *)region1;
+        DWORD region1SampleCount = region1Size / bytesPerSample;
+        for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; sampleIndex++) {
+            i16 sampleValue = ((runningSampleIndex / (sqPeriod / 2)) % 2) ? volume : -volume;
+
+            *sampleOut++ = sampleValue;
+            *sampleOut++ = sampleValue;
+
+            runningSampleIndex++;
+        }
+
+        sampleOut                = (i16 *)region2;
+        DWORD region2SampleCount = region2Size / bytesPerSample;
+        for (DWORD sampleIndex = 0; sampleIndex < region2SampleCount; sampleIndex++) {
+            i16 sampleValue = ((runningSampleIndex / (sqPeriod / 2)) % 2) ? volume : -volume;
+
+            *sampleOut++ = sampleValue;
+            *sampleOut++ = sampleValue;
+
+            runningSampleIndex++;
+        }
+
+        SecondarySoundBuffer->Unlock(region1, region1Size, region2, region2Size);
+        // =====
 
         auto dim = GetWindowDimension(window);
         Win32DisplayBuffer(BackBuffer, deviceContext, dim.Width, dim.Height);
