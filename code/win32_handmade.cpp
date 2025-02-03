@@ -1,4 +1,5 @@
 #include <dsound.h>
+#include <math.h>
 #include <stdint.h>
 #include <Windows.h>
 #include <Xinput.h>
@@ -6,6 +7,12 @@
 #define internal static
 #define local_persist static
 #define global_variable static
+
+typedef double f64;
+typedef float  f32;
+
+#define PI 3.14159265359f
+#define TAU 6.283185307179586f
 
 typedef int64_t i64;
 typedef int32_t i32;
@@ -152,26 +159,30 @@ internal void Win32DisplayBuffer(Win32OffscreenBuffer buffer, HDC deviceContext,
     };
 }
 
+// ----- Test variables
+i32 toneHz   = 256;
+i32 wvPeriod = (48 * 1000) /* samplesPerSecond */ / toneHz;
+i32 volume   = 4000;
+
+i32 xOffset = 0;
+i32 yOffset = 0;
+// -----
+
 LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     LRESULT result = 0;
 
     switch (message) {
-        case WM_SIZE:  // Window size changes
-        {
+        case WM_SIZE: {
         } break;
 
-        case WM_DESTROY:  // Window destroyed
-        {
+        case WM_DESTROY: {
             // TODO(violeta): Handle as error - recreate window
             Running = false;
-            OutputDebugStringA("WM_DESTROY\n");
         } break;
 
-        case WM_CLOSE:  // Window 'X' clicked
-        {
+        case WM_CLOSE: {
             // TODO(violeta): Add user message
             Running = false;
-            OutputDebugStringA("WM_CLOSE\n");
         } break;
 
         case WM_PAINT: {
@@ -184,8 +195,7 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
             EndPaint(window, &paint);
         } break;
 
-        case WM_ACTIVATEAPP:  // Window selected by user
-        {
+        case WM_ACTIVATEAPP: {
             OutputDebugStringA("WM_ACTIVATEAPP\n");
         } break;
 
@@ -199,16 +209,20 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
             b32 altDown = lParam & (1 << 29);
 
             switch (vKCode) {
-                case 'W' | VK_UP:
+                case VK_UP:
+                case 'W':
                     break;
 
-                case 'A' | VK_LEFT:
+                case VK_LEFT:
+                case 'A':
                     break;
 
-                case 'S' | VK_DOWN:
+                case VK_DOWN:
+                case 'S':
                     break;
 
-                case 'D' | VK_RIGHT:
+                case VK_RIGHT:
+                case 'D':
                     break;
 
                 case VK_F4: {
@@ -228,7 +242,7 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
         } break;
     }
 
-    return (result);
+    return result;
 }
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
@@ -255,21 +269,12 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     }
     HDC deviceContext = GetDC(window);
 
-    i32 samplesPerSecond = 48 * 1000;
-    u32 bytesPerSample   = sizeof(i16) * 2;
-    u32 bufferSize       = samplesPerSecond * bytesPerSample;
-    Win32InitDSound(window, bufferSize, samplesPerSecond);
-    SecondarySoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
-
-    // ----- Test variables
-    i32 toneHz             = 256;
+    i32 samplesPerSecond   = 48 * 1000;
+    u32 bytesPerSample     = sizeof(i16) * 2;
+    u32 bufferSize         = samplesPerSecond * bytesPerSample;
     u32 runningSampleIndex = 0;
-    i32 sqPeriod           = samplesPerSecond / toneHz;
-    i32 volume             = 4000;
-
-    i32 xOffset = 0;
-    i32 yOffset = 0;
-    // -----
+    Win32InitDSound(window, bufferSize, samplesPerSecond);
+    bool firstSoundLoop = true;  // TODO(violeta): Doesn't seem to do anything?
 
     while (Running) {
         MSG message;
@@ -321,7 +326,9 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             // TODO: Log
         }
 
-        DWORD byteToLock   = runningSampleIndex * bytesPerSample % bufferSize;
+        DWORD byteToLock = (runningSampleIndex * bytesPerSample) % bufferSize;
+
+        // TODO: Change to a lower latency offset from playcursor when we implement sfx.
         DWORD bytesToWrite = byteToLock > playCursor ? bufferSize - byteToLock + playCursor
                                                      : playCursor - byteToLock;
 
@@ -336,7 +343,10 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         i16  *sampleOut          = (i16 *)region1;
         DWORD region1SampleCount = region1Size / bytesPerSample;
         for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; sampleIndex++) {
-            i16 sampleValue = ((runningSampleIndex / (sqPeriod / 2)) % 2) ? volume : -volume;
+            // sampleValue = ((runningSampleIndex / (wvPeriod / 2)) % 2) ? volume : -volume;
+            f32 t           = TAU * f32(runningSampleIndex) / f32(wvPeriod);
+            f32 sineValue   = sinf(t);
+            i16 sampleValue = i16(sineValue * volume);
 
             *sampleOut++ = sampleValue;
             *sampleOut++ = sampleValue;
@@ -347,7 +357,10 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         sampleOut                = (i16 *)region2;
         DWORD region2SampleCount = region2Size / bytesPerSample;
         for (DWORD sampleIndex = 0; sampleIndex < region2SampleCount; sampleIndex++) {
-            i16 sampleValue = ((runningSampleIndex / (sqPeriod / 2)) % 2) ? volume : -volume;
+            // i16 sampleValue = ((runningSampleIndex / (wvPeriod / 2)) % 2) ? volume : -volume;
+            f32 t           = TAU * f32(runningSampleIndex) / f32(wvPeriod);
+            f32 sineValue   = sinf(t);
+            i16 sampleValue = i16(sineValue * volume);
 
             *sampleOut++ = sampleValue;
             *sampleOut++ = sampleValue;
@@ -356,6 +369,11 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         }
 
         SecondarySoundBuffer->Unlock(region1, region1Size, region2, region2Size);
+
+        if (firstSoundLoop) {
+            SecondarySoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
+            firstSoundLoop = false;
+        }
         // =====
 
         auto dim = GetWindowDimension(window);
@@ -366,5 +384,5 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         ++yOffset;
     }
 
-    return (0);
+    return 0;
 }
