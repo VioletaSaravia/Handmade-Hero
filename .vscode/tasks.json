@@ -8,6 +8,7 @@
                 "/Zi",
                 "/EHsc",
                 "/nologo",
+                //"/O2",
                 //"/Wall",
                 "/std:c++20",
                 "/Fe${workspaceFolder}\\build\\${fileBasenameNoExtension}.exe",

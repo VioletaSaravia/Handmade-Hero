@@ -1,15 +1,13 @@
 #include <dsound.h>
 #include <math.h>
 #include <stdint.h>
+#include <strsafe.h>
 #include <Windows.h>
 #include <Xinput.h>
 
 #define internal static
 #define local_persist static
 #define global_variable static
-
-typedef double f64;
-typedef float  f32;
 
 #define PI 3.14159265359f
 #define TAU 6.283185307179586f
@@ -26,10 +24,8 @@ typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t  u8;
 
-typedef unsigned char u8;
-
-typedef double f64;
-typedef float  f32;
+typedef double_t f64;
+typedef float_t  f32;
 
 struct Win32OffscreenBuffer {
     void      *Memory;
@@ -245,6 +241,17 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
     return result;
 }
 
+#ifndef DEBUG
+#define WIN32_CHECK(func) (func)
+#else
+#define WIN32_CHECK(func)                                                 \
+    if (FAILED(func)) {                                                   \
+        char buf[32];                                                     \
+        StringCbPrintfA(buf, sizeof(buf), "ERROR: %d\n", GetLastError()); \
+        OutputDebugStringA(buf);                                          \
+    }
+#endif
+
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
     Win32ResizeDIBSection(&BackBuffer, 1280, 720);
 
@@ -275,6 +282,15 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     u32 runningSampleIndex = 0;
     Win32InitDSound(window, bufferSize, samplesPerSecond);
     bool firstSoundLoop = true;  // TODO(violeta): Doesn't seem to do anything?
+
+    LARGE_INTEGER perfCountFrequencyResult = {};
+    WIN32_CHECK(QueryPerformanceFrequency(&perfCountFrequencyResult));
+    i64 perfCountFrequency = perfCountFrequencyResult.QuadPart;
+
+    LARGE_INTEGER lastCounter = {};
+    WIN32_CHECK(QueryPerformanceCounter(&lastCounter));
+
+    u64 lastCycleCount = __rdtsc();
 
     while (Running) {
         MSG message;
@@ -380,8 +396,30 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         Win32DisplayBuffer(BackBuffer, deviceContext, dim.Width, dim.Height);
         ReleaseDC(window, deviceContext);
 
+        // TEST vars
         ++xOffset;
         ++yOffset;
+
+        // ##### PERFORMANCE
+        u64 endCycleCount = __rdtsc();
+        u64 cyclesElapsed = endCycleCount - lastCycleCount;
+
+        LARGE_INTEGER endCounter;
+        WIN32_CHECK(QueryPerformanceCounter(&endCounter));
+        i64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
+
+        f64 msPerFrame         = (1000.0 * f64(counterElapsed)) / f64(perfCountFrequency);
+        f64 framesPerSec       = f64(perfCountFrequency) / f64(counterElapsed);
+        f64 megaCyclesPerFrame = f64(cyclesElapsed) / (1000.0 * 1000.0);
+
+        char buf[128];
+        WIN32_CHECK(StringCbPrintfA(buf, sizeof(buf), "%.2f ms/f, %.2f fps, %.2f mc/f\n",
+                                    msPerFrame, framesPerSec, megaCyclesPerFrame));
+        OutputDebugStringA(buf);
+
+        lastCounter    = endCounter;
+        lastCycleCount = endCycleCount;
+        // #####
     }
 
     return 0;
