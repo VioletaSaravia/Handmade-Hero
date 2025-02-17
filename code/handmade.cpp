@@ -1,24 +1,42 @@
 #include "handmade.h"
 
-enum ButtonState { JustPressed, Pressed, JustReleased, Released };
+enum ButtonState : u8 { Released, JustReleased, Pressed, JustPressed };
 
-enum GamepadButton { Up, Down, Left, Right, A, B, X, Y, ShL, ShR, Start, Back, COUNT };
+enum GamepadButton : u8 { Up, Down, Left, Right, A, B, X, Y, ShL, ShR, Start, Back, COUNT };
 
 struct ControllerState {
-    bool connected;
+    bool connected, notAnalog;
 
     ButtonState buttons[GamepadButton::COUNT];
     f32         triggerLStart, triggerLEnd, triggerRStart, triggerREnd;
 
-    bool notAnalog;
-    v2   analogLStart, analogLEnd, analogRStart, analogREnd;
-    f32  minX, minY, maxX, maxY;
+    v2  analogLStart, analogLEnd, analogRStart, analogREnd;
+    f32 minX, minY, maxX, maxY;
 };
 
-#define MAX_CONTROLLERS 4
+#define KEY_COUNT 256
+
+// NOTE(violeta): These are win32 key codes. They make the code easy on windows, but they might
+// be a pain in other platforms, but they should work.
+enum Key : u8 {
+    Shift    = 0x10,
+    Ctrl     = 0x11,
+    Space    = 0x20,
+    KeyLeft  = 0x25,
+    KeyUp    = 0x26,
+    KeyRight = 0x27,
+    KeyDown  = 0x28,
+};
+
+struct KeyboardState {
+    ButtonState keys[KEY_COUNT];
+};
+
+#define CONTROLLER_COUNT 4
 
 struct InputBuffer {
-    ControllerState controllers[MAX_CONTROLLERS];
+    ControllerState controllers[CONTROLLER_COUNT];
+    KeyboardState   keyboard;
 };
 
 struct SoundBuffer {
@@ -29,7 +47,6 @@ struct SoundBuffer {
 };
 
 internal void OutputSound(SoundBuffer *buffer) {
-    f64 phase = 0;
     for (u32 i = 0; i < buffer->byteCount;) {
         i16 sample             = 0;
         buffer->sampleOut[i++] = (u8)sample;  // Values are little-endian.
@@ -77,8 +94,8 @@ internal void RenderWeirdGradient(ScreenBuffer *buffer, int xOffset, int yOffset
 internal void UpdateAndRender(Memory *memory, InputBuffer *input, ScreenBuffer *screen,
                               SoundBuffer *sound) {
     Assert(sizeof(memory->permStore) >= sizeof(GameState));
-
     GameState *state = (GameState *)memory->permStore;
+
     OutputSound(sound);
     RenderWeirdGradient(screen, 0, 0);
 }

@@ -161,7 +161,7 @@ internal void Win32InitSound(Win32SoundBuffer *sound) {
 v2i GetWindowDimension(HWND window) {
     RECT clientRect;  // Rect of "client" (drawable area)
     GetClientRect(window, &clientRect);
-    return {clientRect.right - clientRect.left, clientRect.bottom - clientRect.top};
+    return {{clientRect.right - clientRect.left, clientRect.bottom - clientRect.top}};
 }
 
 // DIB = Device-independent bitmap
@@ -234,38 +234,12 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
         case WM_SYSKEYUP:
         case WM_KEYDOWN:
         case WM_KEYUP: {
-            u64 vKCode  = wParam;
             b32 wasDown = (lParam & (1 << 30));
             b32 isDown  = (lParam & (1 << 31)) == 0;
-            b32 altDown = lParam & (1 << 29);
 
-            switch (vKCode) {
-                case VK_UP:
-                case 'W':
-                    break;
-
-                case VK_LEFT:
-                case 'A':
-                    break;
-
-                case VK_DOWN:
-                case 'S':
-                    break;
-
-                case VK_RIGHT:
-                case 'D':
-                    break;
-
-                case VK_F4: {
-                    Running = !altDown;
-                } break;
-
-                case VK_SPACE:
-                    break;
-
-                default:
-                    break;
-            }
+            Win32Input.keyboard.keys[wParam] = wasDown && isDown    ? ButtonState::Pressed
+                                               : !wasDown && isDown ? ButtonState::JustPressed
+                                                                    : ButtonState::JustReleased;
         } break;
 
         default: {
@@ -277,21 +251,21 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
 }
 
 internal void Win32ProcessXInputControllers(InputBuffer *state) {
-    for (DWORD i = 0; i < XUSER_MAX_COUNT /* != MAX_CONTROLLERS?! */; i++) {
+    for (DWORD i = 0; i < XUSER_MAX_COUNT /* TODO(violeta): != CONTROLLER_COUNT?! */; i++) {
         ControllerState  newController = {};
         ControllerState *controller    = &state->controllers[i];
 
         XINPUT_STATE xInputState = {};
         if (XInputGetState(i, &xInputState) != ERROR_SUCCESS) {
             if (controller->connected) {
-                OutputDebugStringA("[Controller XXX] Disconected");
+                OutputDebugStringA("[Controller TODO] Disconected");
                 controller->connected = false;
             }
             continue;
         } else {
             if (!controller->connected) {
                 controller->connected = true;
-                OutputDebugStringA("[Controller XXX] Connected");
+                OutputDebugStringA("[Controller TODO] Connected");
             }
         }
 
@@ -312,18 +286,18 @@ internal void Win32ProcessXInputControllers(InputBuffer *state) {
             (pad->wButtons & XINPUT_GAMEPAD_BACK),
         };
 
-        for (i32 i = 0; i < GamepadButton::COUNT; i++) {
-            switch (controller->buttons[i]) {
+        for (i32 j = 0; j < GamepadButton::COUNT; j++) {
+            switch (controller->buttons[j]) {
                 case ButtonState::Pressed:
                 case ButtonState::JustPressed:
-                    newController.buttons[i] =
-                        btnState[i] != 0 ? ButtonState::Pressed : ButtonState::JustReleased;
+                    newController.buttons[j] =
+                        btnState[j] != 0 ? ButtonState::Pressed : ButtonState::JustReleased;
                     break;
 
                 case ButtonState::Released:
                 case ButtonState::JustReleased:
-                    newController.buttons[i] =
-                        btnState[i] != 0 ? ButtonState::JustPressed : ButtonState::Released;
+                    newController.buttons[j] =
+                        btnState[j] != 0 ? ButtonState::JustPressed : ButtonState::Released;
                     break;
             }
         }
@@ -378,8 +352,7 @@ internal bool Win32InitWindow(Win32ScreenBuffer *screen, HINSTANCE instance) {
 }
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
-    void *data = PlatformReadEntireFile("hello.txt");
-
+    // <Init>
     Win32InitWindow(&Win32Screen, instance);
     Win32InitSound(&Win32Sound);
 
@@ -389,6 +362,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         VirtualAlloc(0, Win32Memory.permStoreSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     Win32Memory.scratchStore =
         VirtualAlloc(0, Win32Memory.scratchStoreSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    // </Init>
 
     // <Performance>
     LARGE_INTEGER perfCountFrequencyResult = {};
@@ -402,6 +376,12 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     // </Performance>
 
     while (Running) {
+        // <Input>
+        for (i32 i = 0; i < 256; i++) {
+            if (Win32Input.keyboard.keys[i] == ButtonState::JustReleased)
+                Win32Input.keyboard.keys[i] = ButtonState::Released;
+        }
+
         // PeekMessageA(..., 0, 0, 0, ..) gets messages from all windows (hWnds) in the application,
         // without blocking when there's no message.
         MSG message;
@@ -415,11 +395,16 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         }
 
         Win32ProcessXInputControllers(&Win32Input);
+        // </Input>
+
+        // MAIN UPDATE FUNCTION
         UpdateAndRender(&Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
 
+        // <Render>
         v2i dim = GetWindowDimension(Win32Screen.window);
         Win32DisplayBuffer(Win32Screen, Win32Screen.deviceContext, dim.width, dim.height);
         ReleaseDC(Win32Screen.window, Win32Screen.deviceContext);
+        // </Render>
 
         // <Performance>
         u64 endCycleCount = __rdtsc();

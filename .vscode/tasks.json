@@ -6,10 +6,15 @@
             "command": "cl.exe",
             "args": [
                 "/Zi",
-                "/EHsc",
                 "/nologo",
-                //"/O2",
-                //"/Wall",
+                "/GR-", // No c++ runtime info
+                "/EHa-", // No c++ exceptions
+                "/Oi", // Intrinsics always on
+                "/MT", // Statically link (default)
+                "/Gm-", // No incremental builds
+                // "/Fm${workspaceFolder}\\build\\win32_handmade.map", // Generate map file
+                // "/O2",
+                // "/Wall",
                 "/std:c++20",
                 "/Fe${workspaceFolder}\\build\\${fileBasenameNoExtension}.exe",
                 "/Fd${workspaceFolder}\\build\\vc140.pdb",
@@ -21,9 +26,6 @@
                 "Xaudio2.lib",
                 "Ole32.lib"
             ],
-            "options": {
-                "cwd": "${workspaceFolder}/data"
-            },
             "problemMatcher": [
                 "$msCompile"
             ],
