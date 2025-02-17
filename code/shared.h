@@ -2,12 +2,26 @@
 #include <cmath>
 #include <cstdint>
 
+// TODO(violeta): This doesn't crash the program on PS1, I think.
+#ifdef DEBUG
+#define Assert(expression) \
+    if (!(expression)) {   \
+        *(int *)0 = 0;     \
+    }
+#else
+#define Assert(expression)
+#endif
+
 #define internal static
 #define local_persist static
 #define global_variable static
 
 #define PI 3.14159265359f
 #define TAU 6.283185307179586f
+
+#define KB(val) ((val) * 1024)
+#define MB(val) (KB(val) * 1024)
+#define GB(val) (MB(val) * 1024)
 
 typedef int64_t i64;
 typedef int32_t i32;
@@ -28,6 +42,11 @@ struct v2 {
     f32 x, y;
 };
 
-struct v2i {
+union v2i {
+    struct {
     i32 x, y;
+    };
+    struct {
+        i32 width, height;
+    };
 };

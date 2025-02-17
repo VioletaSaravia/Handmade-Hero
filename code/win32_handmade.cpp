@@ -44,6 +44,8 @@ global_variable Win32SoundBuffer Win32Sound;
 struct Win32InputBuffer : InputBuffer {};
 global_variable Win32InputBuffer Win32Input;
 
+global_variable Memory Win32Memory;
+
 global_variable bool Running = true;
 
 #ifndef DEBUG
@@ -74,7 +76,8 @@ internal void Win32InitSound(Win32SoundBuffer *sound) {
     sound->samplesPerSec = SAMPLESPERSEC;
     sound->sampleCount   = AUDIOBUFFERSIZEINSAMPLES;
     sound->byteCount     = AUDIOBUFFERSIZEINBYTES;
-    sound->sampleOut     = (u8 *)malloc(AUDIOBUFFERSIZEINBYTES);
+    sound->sampleOut =
+        (u8 *)VirtualAlloc(0, AUDIOBUFFERSIZEINBYTES, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     for (u32 i = 0; i < AUDIOBUFFERSIZEINBYTES; i++) {
         sound->sampleOut[i] = 0;
     }
@@ -136,9 +139,8 @@ internal void Win32ResizeDIBSection(Win32ScreenBuffer *buffer, int width, int he
                       .biClrUsed       = 0,
                       .biClrImportant  = 0}};
 
-    u64 bitmapMemorySize = u64(buffer->Width * buffer->Height) * buffer->BytesPerPixel;
-    buffer->Memory =
-        (u8 *)VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    u64 bitmapSize = u64(buffer->Width * buffer->Height) * buffer->BytesPerPixel;
+    buffer->Memory = (u8 *)VirtualAlloc(0, bitmapSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 }
 
 internal void Win32DisplayBuffer(Win32ScreenBuffer buffer, HDC deviceContext, int windowWidth,
@@ -171,7 +173,7 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
             HDC         deviceContext = BeginPaint(window, &paint);
 
             auto dim = GetWindowDimension(window);
-            Win32DisplayBuffer(Win32Screen, deviceContext, dim.x, dim.y);
+            Win32DisplayBuffer(Win32Screen, deviceContext, dim.width, dim.height);
 
             EndPaint(window, &paint);
         } break;
@@ -232,8 +234,16 @@ internal void Win32ProcessXInputControllers(InputBuffer *state) {
 
         XINPUT_STATE xInputState = {};
         if (XInputGetState(i, &xInputState) != ERROR_SUCCESS) {
-            // TODO(violeta): Controller not connected
+            if (controller->connected) {
+                OutputDebugStringA("[Controller XXX] Disconected");
+                controller->connected = false;
+            }
             continue;
+        } else {
+            if (!controller->connected) {
+                controller->connected = true;
+                OutputDebugStringA("[Controller XXX] Connected");
+            }
         }
 
         XINPUT_GAMEPAD *pad = &xInputState.Gamepad;
@@ -322,6 +332,13 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     Win32InitWindow(&Win32Screen, instance);
     Win32InitSound(&Win32Sound);
 
+    Win32Memory.permStoreSize    = MB(64);
+    Win32Memory.scratchStoreSize = MB(64);
+    Win32Memory.permStore =
+        VirtualAlloc(0, Win32Memory.permStoreSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    Win32Memory.scratchStore =
+        VirtualAlloc(0, Win32Memory.scratchStoreSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
     // <Performance>
     LARGE_INTEGER perfCountFrequencyResult = {};
     QueryPerformanceFrequency(&perfCountFrequencyResult);
@@ -347,10 +364,10 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         }
 
         Win32ProcessXInputControllers(&Win32Input);
-        UpdateAndRender(&Win32Input, &Win32Screen, &Win32Sound);
+        UpdateAndRender(&Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
 
         v2i dim = GetWindowDimension(Win32Screen.window);
-        Win32DisplayBuffer(Win32Screen, Win32Screen.deviceContext, dim.x, dim.y);
+        Win32DisplayBuffer(Win32Screen, Win32Screen.deviceContext, dim.width, dim.height);
         ReleaseDC(Win32Screen.window, Win32Screen.deviceContext);
 
         // <Performance>

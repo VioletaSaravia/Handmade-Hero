@@ -41,6 +41,16 @@ struct ScreenBuffer {
     i32 BytesPerPixel;
 };
 
+struct Memory {
+    bool  isInitialized;
+    u64   permStoreSize;
+    void *permStore;
+    u64   scratchStoreSize;
+    void *scratchStore;
+};
+
+struct GameState {};
+
 internal void RenderWeirdGradient(ScreenBuffer *buffer, int xOffset, int yOffset) {
     i32 stride = buffer->Width * buffer->BytesPerPixel;
     u8 *row    = (u8 *)buffer->Memory;
@@ -62,7 +72,11 @@ internal void RenderWeirdGradient(ScreenBuffer *buffer, int xOffset, int yOffset
     }
 }
 
-internal void UpdateAndRender(InputBuffer *input, ScreenBuffer *screen, SoundBuffer *sound) {
+internal void UpdateAndRender(Memory *memory, InputBuffer *input, ScreenBuffer *screen,
+                              SoundBuffer *sound) {
+    Assert(sizeof(memory->permStore) >= sizeof(GameState));
+
+    GameState *state = (GameState *)memory->permStore;
     OutputSound(sound);
     RenderWeirdGradient(screen, 0, 0);
 }
