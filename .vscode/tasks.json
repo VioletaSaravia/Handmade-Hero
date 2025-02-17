@@ -18,7 +18,8 @@
                 "user32.lib",
                 "gdi32.lib",
                 "Xinput.lib",
-                "Dsound.lib"
+                "Xaudio2.lib",
+                "Ole32.lib"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/data"
