@@ -5,58 +5,62 @@
 #include <Windows.h>
 #include <Xinput.h>
 
-#define internal static
-#define local_persist static
-#define global_variable static
+#include "handmade.cpp"
+#include "shared.h"
 
-#define PI 3.14159265359f
-#define TAU 6.283185307179586f
+/*
+    TODO: PLATFORM LAYER LIST (INCOMPLETE):
 
-typedef int64_t i64;
-typedef int32_t i32;
-typedef int16_t i16;
-typedef int8_t  i8;
+    - Savegame locations
+    - getting handle to executable file
+    - asset loading path
+    - threading
+    - raw input (multiple keyb support?)
+    - sleep/timebegin period
+    - ClipCursor() (for multi monitor)
+    - fullscreen support
+    - WM_SETCURSOR (cursor visibility)
+    - QueryCancelAutoplay()
+    - WM_ACTIVATEAPP (for when app is not active)
+    - blit speed improvements (bitblt)
+    - hardware acceleration (opengl/d3d/vulkan/etc.)
+    - GetKeyboardLayout()
+*/
 
-typedef int32_t b32;
-
-typedef uint64_t u64;
-typedef uint32_t u32;
-typedef uint16_t u16;
-typedef uint8_t  u8;
-
-typedef double_t f64;
-typedef float_t  f32;
-
-struct Win32OffscreenBuffer {
-    void      *Memory;
-    int        Width, Height;
-    int        BytesPerPixel;
-    BITMAPINFO Info;
-};
+typedef struct {
+    BITMAPINFO          Info;
+    GameOffscreenBuffer buffer;
+} Win32OffscreenBuffer;
 
 global_variable bool                 Running = true;
-global_variable Win32OffscreenBuffer BackBuffer;
+global_variable Win32OffscreenBuffer Win32Buffer;
 global_variable LPDIRECTSOUNDBUFFER  SecondarySoundBuffer;
 
-internal void Win32InitDSound(HWND window, u32 bufferSize, u32 samplesPerSecond) {
-    LPDIRECTSOUND directSound;
-    // TODO(violeta): Why even use this macro?
-    if (!SUCCEEDED(DirectSoundCreate(0, &directSound, 0))) {
-        return;
+#ifndef DEBUG
+#define WIN32_CHECK(func) (func)
+#else
+#define WIN32_CHECK(func)                                                  \
+    if (FAILED(func)) {                                                    \
+        char buf[32];                                                      \
+        StringCbPrintfA(buf, sizeof(buf), "[ERROR] %d\n", GetLastError()); \
+        OutputDebugStringA(buf);                                           \
     }
+#endif
 
-    if (!SUCCEEDED(directSound->SetCooperativeLevel(window, DSSCL_PRIORITY))) {
-        return;
-    };
+internal void Win32InitDSound(HWND window, u32 bufferSize, u32 samplesPerSecond) {
+    LPDIRECTSOUND directSound = {};
+
+    WIN32_CHECK(DirectSoundCreate(0, &directSound, 0));
+
+    WIN32_CHECK(directSound->SetCooperativeLevel(window, DSSCL_PRIORITY));
 
     LPDIRECTSOUNDBUFFER primaryBuffer     = {};
     DSBUFFERDESC        bufferDescription = {
                .dwSize  = sizeof(DSBUFFERDESC),
                .dwFlags = DSBCAPS_PRIMARYBUFFER,
     };
-    if (!SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &primaryBuffer, 0))) {
-        return;
-    };
+
+    WIN32_CHECK(directSound->CreateSoundBuffer(&bufferDescription, &primaryBuffer, 0));
 
     WAVEFORMATEX waveFormat = {
         .wFormatTag      = WAVE_FORMAT_PCM,
@@ -68,9 +72,7 @@ internal void Win32InitDSound(HWND window, u32 bufferSize, u32 samplesPerSecond)
         .cbSize          = 0,
     };
 
-    if (!SUCCEEDED(primaryBuffer->SetFormat(&waveFormat))) {
-        return;
-    };
+    WIN32_CHECK(primaryBuffer->SetFormat(&waveFormat));
 
     // Secondary buffer
     DSBUFFERDESC bufferDescription2 = {
@@ -79,60 +81,34 @@ internal void Win32InitDSound(HWND window, u32 bufferSize, u32 samplesPerSecond)
         .dwBufferBytes = bufferSize,
         .lpwfxFormat   = &waveFormat,  // TODO primary too?
     };
-    if (!SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription2, &SecondarySoundBuffer, 0))) {
-        return;
-    };
+
+    WIN32_CHECK(directSound->CreateSoundBuffer(&bufferDescription2, &SecondarySoundBuffer, 0));
 }
 
 struct Win32WindowDimension {
     int Width, Height;
 };
-
 Win32WindowDimension GetWindowDimension(HWND window) {
     RECT clientRect;  // Rect of "client" (drawable area)
     GetClientRect(window, &clientRect);
     return {clientRect.right - clientRect.left, clientRect.bottom - clientRect.top};
 }
 
-internal void RenderWeirdGradient(Win32OffscreenBuffer *buffer, int xOffset, int yOffset) {
-    int width  = buffer->Width;
-    int height = buffer->Height;
-
-    int stride = width * buffer->BytesPerPixel;
-    u8 *row    = (u8 *)buffer->Memory;
-    for (int y = 0; y < height; y++) {
-        u32 *pixel = (u32 *)row;
-        for (int x = 0; x < width; x++) {
-            /*
-            Pixel: BB GG RR -- (4 bytes)
-                   0  1  2  3
-            */
-            u8 blue  = u8(x + xOffset);
-            u8 green = u8(y + yOffset);
-            u8 red   = 0;
-
-            *pixel++ = u32(blue | (green << 8) | (red << 16));
-        }
-
-        row += stride;
-    }
-}
-
 // DIB = Device-independent bitmap
-internal void Win32ResizeDIBSection(Win32OffscreenBuffer *buffer, int width, int height) {
-    if (buffer->Memory) {
-        VirtualFree(buffer->Memory, 0, MEM_RELEASE);
+internal void Win32ResizeDIBSection(Win32OffscreenBuffer *win32Buffer, int width, int height) {
+    if (win32Buffer->buffer.Memory) {
+        VirtualFree(win32Buffer->buffer.Memory, 0, MEM_RELEASE);
     }
 
-    buffer->Width         = width;
-    buffer->Height        = height;
-    buffer->BytesPerPixel = 4;
+    win32Buffer->buffer.Width         = width;
+    win32Buffer->buffer.Height        = height;
+    win32Buffer->buffer.BytesPerPixel = 4;
 
-    buffer->Info = {
-        .bmiHeader = {.biSize  = sizeof(buffer->Info.bmiHeader),
-                      .biWidth = buffer->Width,
+    win32Buffer->Info = {
+        .bmiHeader = {.biSize  = sizeof(win32Buffer->Info.bmiHeader),
+                      .biWidth = win32Buffer->buffer.Width,
                       // Negative height tells Windows to treat the window's y axis as top-down
-                      .biHeight        = -buffer->Height,
+                      .biHeight        = -win32Buffer->buffer.Height,
                       .biPlanes        = 1,
                       .biBitCount      = 32,  // 4 byte align
                       .biCompression   = BI_RGB,
@@ -142,22 +118,27 @@ internal void Win32ResizeDIBSection(Win32OffscreenBuffer *buffer, int width, int
                       .biClrUsed       = 0,
                       .biClrImportant  = 0}};
 
-    u64 bitmapMemorySize = u64(buffer->Width * buffer->Height) * buffer->BytesPerPixel;
-    buffer->Memory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    u64 bitmapMemorySize = u64(win32Buffer->buffer.Width * win32Buffer->buffer.Height) *
+                           win32Buffer->buffer.BytesPerPixel;
+    win32Buffer->buffer.Memory =
+        VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 }
 
 internal void Win32DisplayBuffer(Win32OffscreenBuffer buffer, HDC deviceContext, int windowWidth,
                                  int windowHeight) {
     // TODO(violeta): Aspect ratio correction and stretch modes
-    if (!StretchDIBits(deviceContext, 0, 0, windowWidth, windowHeight, 0, 0, buffer.Width,
-                       buffer.Height, buffer.Memory, &buffer.Info, DIB_RGB_COLORS, SRCCOPY)) {
+    if (!StretchDIBits(deviceContext, 0, 0, windowWidth, windowHeight, 0, 0, buffer.buffer.Width,
+                       buffer.buffer.Height, buffer.buffer.Memory, &buffer.Info, DIB_RGB_COLORS,
+                       SRCCOPY)) {
         // TODO: log
     };
 }
 
+#define SAMPLES_PER_SEC 48 * 1000
+
 // ----- Test variables
 i32 toneHz   = 256;
-i32 wvPeriod = (48 * 1000) /* samplesPerSecond */ / toneHz;
+i32 wvPeriod = SAMPLES_PER_SEC / toneHz;
 i32 volume   = 4000;
 
 i32 xOffset = 0;
@@ -177,7 +158,6 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
         } break;
 
         case WM_CLOSE: {
-            // TODO(violeta): Add user message
             Running = false;
         } break;
 
@@ -186,7 +166,7 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
             HDC         deviceContext = BeginPaint(window, &paint);
 
             auto dim = GetWindowDimension(window);
-            Win32DisplayBuffer(BackBuffer, deviceContext, dim.Width, dim.Height);
+            Win32DisplayBuffer(Win32Buffer, deviceContext, dim.Width, dim.Height);
 
             EndPaint(window, &paint);
         } break;
@@ -241,19 +221,8 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
     return result;
 }
 
-#ifndef DEBUG
-#define WIN32_CHECK(func) (func)
-#else
-#define WIN32_CHECK(func)                                                 \
-    if (FAILED(func)) {                                                   \
-        char buf[32];                                                     \
-        StringCbPrintfA(buf, sizeof(buf), "ERROR: %d\n", GetLastError()); \
-        OutputDebugStringA(buf);                                          \
-    }
-#endif
-
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
-    Win32ResizeDIBSection(&BackBuffer, 1280, 720);
+    Win32ResizeDIBSection(&Win32Buffer, 1280, 720);
 
     WNDCLASSA windowClass = {
         .style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
@@ -264,23 +233,23 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     };
 
     if (!RegisterClassA(&windowClass)) {
-        // TODO log
+        OutputDebugStringA("[ERROR] Couldn't register window class");
+        return -1;
     }
 
     HWND window = CreateWindowExA(0, windowClass.lpszClassName, "Handmade Hero",
                                   WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
                                   CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0);
-
     if (!window) {
-        // TODO log
+        OutputDebugStringA("[ERROR] Couldn't create window");
+        return -1;
     }
     HDC deviceContext = GetDC(window);
 
-    i32 samplesPerSecond   = 48 * 1000;
     u32 bytesPerSample     = sizeof(i16) * 2;
-    u32 bufferSize         = samplesPerSecond * bytesPerSample;
+    u32 bufferSize         = SAMPLES_PER_SEC * bytesPerSample;
     u32 runningSampleIndex = 0;
-    Win32InitDSound(window, bufferSize, samplesPerSecond);
+    Win32InitDSound(window, bufferSize, SAMPLES_PER_SEC);
     bool firstSoundLoop = true;  // TODO(violeta): Doesn't seem to do anything?
 
     LARGE_INTEGER perfCountFrequencyResult = {};
@@ -334,26 +303,21 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             i16 stickRY = pad->sThumbRY;
         }
 
-        RenderWeirdGradient(&BackBuffer, xOffset, yOffset);
+        UpdateAndRender(&Win32Buffer.buffer);
 
         // ===== SOUND
         DWORD playCursor, writeCursor;
-        if (!SUCCEEDED(SecondarySoundBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
-            // TODO: Log
-        }
+        WIN32_CHECK(SecondarySoundBuffer->GetCurrentPosition(&playCursor, &writeCursor));
 
         DWORD byteToLock = (runningSampleIndex * bytesPerSample) % bufferSize;
 
-        // TODO: Change to a lower latency offset from playcursor when we implement sfx.
         DWORD bytesToWrite = byteToLock > playCursor ? bufferSize - byteToLock + playCursor
                                                      : playCursor - byteToLock;
 
         void *region1, *region2;
         DWORD region1Size, region2Size;
-        if (!SUCCEEDED(SecondarySoundBuffer->Lock(byteToLock, bytesToWrite, &region1, &region1Size,
-                                                  &region2, &region2Size, 0))) {
-            // TODO: Log
-        };
+        WIN32_CHECK(SecondarySoundBuffer->Lock(byteToLock, bytesToWrite, &region1, &region1Size,
+                                               &region2, &region2Size, 0));
 
         // TODO: assert region1/2Size are valid
         i16  *sampleOut          = (i16 *)region1;
@@ -393,7 +357,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         // =====
 
         auto dim = GetWindowDimension(window);
-        Win32DisplayBuffer(BackBuffer, deviceContext, dim.Width, dim.Height);
+        Win32DisplayBuffer(Win32Buffer, deviceContext, dim.Width, dim.Height);
         ReleaseDC(window, deviceContext);
 
         // TEST vars
