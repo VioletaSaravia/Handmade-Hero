@@ -1,10 +1,12 @@
-#include "shared.h"
+#include "handmade.h"
 
 enum ButtonState { JustPressed, Pressed, JustReleased, Released };
 
 enum GamepadButton { Up, Down, Left, Right, A, B, X, Y, ShL, ShR, Start, Back, COUNT };
 
 struct ControllerState {
+    bool connected;
+
     ButtonState buttons[GamepadButton::COUNT];
     f32         triggerLStart, triggerLEnd, triggerRStart, triggerREnd;
 

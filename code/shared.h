@@ -44,7 +44,7 @@ struct v2 {
 
 union v2i {
     struct {
-    i32 x, y;
+        i32 x, y;
     };
     struct {
         i32 width, height;

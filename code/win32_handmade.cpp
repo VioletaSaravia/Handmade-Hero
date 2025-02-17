@@ -27,6 +27,55 @@
     - GetKeyboardLayout()
 */
 
+void *PlatformReadEntireFile(const char *filename) {
+    HANDLE handle =
+        CreateFileA(filename, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, 0);
+    Assert(handle != INVALID_HANDLE_VALUE);
+
+    LARGE_INTEGER size     = {};
+    LARGE_INTEGER sizeRead = {};
+
+    bool ok = GetFileSizeEx(handle, &size);
+    Assert(ok);
+    Assert(size.HighPart == 0);  // 4GB+ reads not supported >:(
+
+    void *result = VirtualAlloc(0, size.LowPart, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+    ok = ReadFile(handle, result, size.LowPart, &sizeRead.LowPart, 0);
+    Assert(ok);
+
+    CloseHandle(handle);
+
+    Assert(sizeRead == size);
+
+    return result;
+};
+
+bool PlatformWriteEntireFile(char *filename, u32 size, void *memory) {
+    HANDLE handle =
+        CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+
+    if (handle == INVALID_HANDLE_VALUE) {
+        // TODO: log
+        return false;
+    }
+
+    DWORD sizeWritten = 0;
+
+    bool ok = WriteFile(handle, memory, size, &sizeWritten, 0);
+
+    CloseHandle(handle);
+
+    if (!ok || sizeWritten != size) {
+        // TODO: log
+        return false;
+    }
+
+    return true;
+};
+
+void PlatformFreeFileMemory(void *memory) { VirtualFree(memory, 0, MEM_RELEASE); };
+
 struct Win32ScreenBuffer : ScreenBuffer {
     HWND       window;
     HDC        deviceContext;
@@ -329,6 +378,8 @@ internal bool Win32InitWindow(Win32ScreenBuffer *screen, HINSTANCE instance) {
 }
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
+    void *data = PlatformReadEntireFile("hello.txt");
+
     Win32InitWindow(&Win32Screen, instance);
     Win32InitSound(&Win32Sound);
 
