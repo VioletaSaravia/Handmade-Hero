@@ -23,3 +23,11 @@ typedef uint8_t  u8;
 
 typedef double_t f64;
 typedef float_t  f32;
+
+struct v2 {
+    f32 x, y;
+};
+
+struct v2i {
+    i32 x, y;
+};

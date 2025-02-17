@@ -28,6 +28,8 @@
 */
 
 struct Win32ScreenBuffer : ScreenBuffer {
+    HWND       window;
+    HDC        deviceContext;
     BITMAPINFO Info;
 };
 global_variable Win32ScreenBuffer Win32Screen;
@@ -39,12 +41,15 @@ struct Win32SoundBuffer : SoundBuffer {
 };
 global_variable Win32SoundBuffer Win32Sound;
 
+struct Win32InputBuffer : InputBuffer {};
+global_variable Win32InputBuffer Win32Input;
+
 global_variable bool Running = true;
 
 #ifndef DEBUG
-#define WIN32_ASSERT(func) (func)
+#define WIN32_CHECK(func) (func)
 #else
-#define WIN32_ASSERT(func)                                                       \
+#define WIN32_CHECK(func)                                                        \
     if (FAILED(func)) {                                                          \
         char buf[32];                                                            \
         StringCbPrintfA(buf, sizeof(buf), "[WIN32 ERROR] %d\n", GetLastError()); \
@@ -55,22 +60,24 @@ global_variable bool Running = true;
 constexpr u16 BITSPERSSAMPLE           = 16;
 constexpr u32 SAMPLESPERSEC            = 44100;
 constexpr f64 CYCLESPERSEC             = 220.0;
-constexpr f64 VOLUME                   = 0.5;
 constexpr u16 AUDIOBUFFERSIZEINCYCLES  = 10;
 constexpr u32 SAMPLESPERCYCLE          = u32(SAMPLESPERSEC / CYCLESPERSEC);
 constexpr u32 AUDIOBUFFERSIZEINSAMPLES = SAMPLESPERCYCLE * AUDIOBUFFERSIZEINCYCLES;
 constexpr u32 AUDIOBUFFERSIZEINBYTES   = AUDIOBUFFERSIZEINSAMPLES * BITSPERSSAMPLE / 8;
 
 internal void Win32InitSound(Win32SoundBuffer *sound) {
-    WIN32_ASSERT(CoInitializeEx(0, COINIT_MULTITHREADED));
+    WIN32_CHECK(CoInitializeEx(0, COINIT_MULTITHREADED));
 
-    WIN32_ASSERT(XAudio2Create(&sound->xAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR));
-    WIN32_ASSERT(sound->xAudio2->CreateMasteringVoice(&sound->xAudio2MasteringVoice));
+    WIN32_CHECK(XAudio2Create(&sound->xAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR));
+    WIN32_CHECK(sound->xAudio2->CreateMasteringVoice(&sound->xAudio2MasteringVoice));
 
     sound->samplesPerSec = SAMPLESPERSEC;
     sound->sampleCount   = AUDIOBUFFERSIZEINSAMPLES;
     sound->byteCount     = AUDIOBUFFERSIZEINBYTES;
     sound->sampleOut     = (u8 *)malloc(AUDIOBUFFERSIZEINBYTES);
+    for (u32 i = 0; i < AUDIOBUFFERSIZEINBYTES; i++) {
+        sound->sampleOut[i] = 0;
+    }
 
     WAVEFORMATEX waveFormat = {
         .wFormatTag      = WAVE_FORMAT_PCM,
@@ -84,11 +91,6 @@ internal void Win32InitSound(Win32SoundBuffer *sound) {
 
     sound->xAudio2->CreateSourceVoice(&sound->xAudio2SourceVoice, &waveFormat);
 
-    for (u32 i = 0; i < AUDIOBUFFERSIZEINBYTES;) {
-        sound->sampleOut[i++] = 0;
-        sound->sampleOut[i++] = 0;
-    }
-
     XAUDIO2_BUFFER xAudio2Buffer = {
         .Flags      = XAUDIO2_END_OF_STREAM,
         .AudioBytes = AUDIOBUFFERSIZEINBYTES,
@@ -100,14 +102,11 @@ internal void Win32InitSound(Win32SoundBuffer *sound) {
         .LoopCount  = XAUDIO2_LOOP_INFINITE,
     };
 
-    WIN32_ASSERT(sound->xAudio2SourceVoice->SubmitSourceBuffer(&xAudio2Buffer));
-    WIN32_ASSERT(sound->xAudio2SourceVoice->Start(0));
+    WIN32_CHECK(sound->xAudio2SourceVoice->SubmitSourceBuffer(&xAudio2Buffer));
+    WIN32_CHECK(sound->xAudio2SourceVoice->Start(0));
 }
 
-struct Win32WindowDimension {
-    int Width, Height;
-};
-Win32WindowDimension GetWindowDimension(HWND window) {
+v2i GetWindowDimension(HWND window) {
     RECT clientRect;  // Rect of "client" (drawable area)
     GetClientRect(window, &clientRect);
     return {clientRect.right - clientRect.left, clientRect.bottom - clientRect.top};
@@ -138,7 +137,8 @@ internal void Win32ResizeDIBSection(Win32ScreenBuffer *buffer, int width, int he
                       .biClrImportant  = 0}};
 
     u64 bitmapMemorySize = u64(buffer->Width * buffer->Height) * buffer->BytesPerPixel;
-    buffer->Memory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    buffer->Memory =
+        (u8 *)VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 }
 
 internal void Win32DisplayBuffer(Win32ScreenBuffer buffer, HDC deviceContext, int windowWidth,
@@ -171,7 +171,7 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
             HDC         deviceContext = BeginPaint(window, &paint);
 
             auto dim = GetWindowDimension(window);
-            Win32DisplayBuffer(Win32Screen, deviceContext, dim.Width, dim.Height);
+            Win32DisplayBuffer(Win32Screen, deviceContext, dim.x, dim.y);
 
             EndPaint(window, &paint);
         } break;
@@ -225,8 +225,73 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
     return result;
 }
 
-int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
-    Win32ResizeDIBSection(&Win32Screen, 1280, 720);
+internal void Win32ProcessXInputControllers(InputBuffer *state) {
+    for (DWORD i = 0; i < XUSER_MAX_COUNT /* != MAX_CONTROLLERS?! */; i++) {
+        ControllerState  newController = {};
+        ControllerState *controller    = &state->controllers[i];
+
+        XINPUT_STATE xInputState = {};
+        if (XInputGetState(i, &xInputState) != ERROR_SUCCESS) {
+            // TODO(violeta): Controller not connected
+            continue;
+        }
+
+        XINPUT_GAMEPAD *pad = &xInputState.Gamepad;
+
+        i32 btnState[GamepadButton::COUNT] = {
+            (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP),
+            (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN),
+            (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT),
+            (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT),
+            (pad->wButtons & XINPUT_GAMEPAD_A),
+            (pad->wButtons & XINPUT_GAMEPAD_B),
+            (pad->wButtons & XINPUT_GAMEPAD_X),
+            (pad->wButtons & XINPUT_GAMEPAD_Y),
+            (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER),
+            (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER),
+            (pad->wButtons & XINPUT_GAMEPAD_START),
+            (pad->wButtons & XINPUT_GAMEPAD_BACK),
+        };
+
+        for (i32 i = 0; i < GamepadButton::COUNT; i++) {
+            switch (controller->buttons[i]) {
+                case ButtonState::Pressed:
+                case ButtonState::JustPressed:
+                    newController.buttons[i] =
+                        btnState[i] != 0 ? ButtonState::Pressed : ButtonState::JustReleased;
+                    break;
+
+                case ButtonState::Released:
+                case ButtonState::JustReleased:
+                    newController.buttons[i] =
+                        btnState[i] != 0 ? ButtonState::JustPressed : ButtonState::Released;
+                    break;
+            }
+        }
+
+        newController.analogLStart = controller->analogLEnd;
+        newController.analogRStart = controller->analogREnd;
+
+        f32 stickLX = f32(pad->sThumbLX) / (pad->sThumbLX < 0 ? 32768.0f : 32767.0f);
+        f32 stickLY = f32(pad->sThumbLY) / (pad->sThumbLY < 0 ? 32768.0f : 32767.0f);
+        f32 stickRX = f32(pad->sThumbRX) / (pad->sThumbRX < 0 ? 32768.0f : 32767.0f);
+        f32 stickRY = f32(pad->sThumbRY) / (pad->sThumbRY < 0 ? 32768.0f : 32767.0f);
+
+        newController.analogLEnd = {stickLX, stickLY};
+        newController.analogREnd = {stickRX, stickRY};
+
+        newController.triggerLStart = controller->triggerLEnd;
+        newController.triggerRStart = controller->triggerREnd;
+
+        newController.triggerLEnd = f32(pad->bLeftTrigger) / 255.0f;
+        newController.triggerREnd = f32(pad->bRightTrigger) / 255.0f;
+
+        *controller = newController;
+    }
+}
+
+internal bool Win32InitWindow(Win32ScreenBuffer *screen, HINSTANCE instance) {
+    Win32ResizeDIBSection(screen, 1280, 720);
 
     WNDCLASSA windowClass = {
         .style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
@@ -238,20 +303,26 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
     if (!RegisterClassA(&windowClass)) {
         OutputDebugStringA("[ERROR] Couldn't register window class");
-        return -1;
+        return false;
     }
 
-    HWND window = CreateWindowExA(0, windowClass.lpszClassName, "Handmade Hero",
-                                  WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
-                                  CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0);
-    if (!window) {
+    screen->window = CreateWindowExA(0, windowClass.lpszClassName, "Handmade Hero",
+                                     WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
+                                     CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0);
+    if (!screen->window) {
         OutputDebugStringA("[ERROR] Couldn't create window");
-        return -1;
+        return false;
     }
-    HDC deviceContext = GetDC(window);
+    screen->deviceContext = GetDC(screen->window);
 
+    return true;
+}
+
+int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
+    Win32InitWindow(&Win32Screen, instance);
     Win32InitSound(&Win32Sound);
 
+    // <Performance>
     LARGE_INTEGER perfCountFrequencyResult = {};
     QueryPerformanceFrequency(&perfCountFrequencyResult);
     i64 perfCountFrequency = perfCountFrequencyResult.QuadPart;
@@ -260,12 +331,12 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     QueryPerformanceCounter(&lastCounter);
 
     u64 lastCycleCount = __rdtsc();
+    // </Performance>
 
     while (Running) {
-        MSG message;
-
         // PeekMessageA(..., 0, 0, 0, ..) gets messages from all windows (hWnds) in the application,
         // without blocking when there's no message.
+        MSG message;
         while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE)) {
             if (message.message == WM_QUIT) {
                 Running = false;
@@ -275,41 +346,14 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
             DispatchMessageA(&message);
         }
 
-        for (DWORD controllerIndex = 0; controllerIndex < XUSER_MAX_COUNT; controllerIndex++) {
-            XINPUT_STATE controllerState = {};
-            if (XInputGetState(controllerIndex, &controllerState) != ERROR_SUCCESS) {
-                // TODO(violeta): Controller not connected
-                continue;
-            }
+        Win32ProcessXInputControllers(&Win32Input);
+        UpdateAndRender(&Win32Input, &Win32Screen, &Win32Sound);
 
-            auto pad = &controllerState.Gamepad;
+        v2i dim = GetWindowDimension(Win32Screen.window);
+        Win32DisplayBuffer(Win32Screen, Win32Screen.deviceContext, dim.x, dim.y);
+        ReleaseDC(Win32Screen.window, Win32Screen.deviceContext);
 
-            bool up        = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
-            bool down      = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
-            bool left      = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
-            bool right     = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
-            bool start     = (pad->wButtons & XINPUT_GAMEPAD_START);
-            bool back      = (pad->wButtons & XINPUT_GAMEPAD_BACK);
-            bool shoulderL = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
-            bool shoulderR = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
-            bool btnA      = (pad->wButtons & XINPUT_GAMEPAD_A);
-            bool btnB      = (pad->wButtons & XINPUT_GAMEPAD_B);
-            bool btnX      = (pad->wButtons & XINPUT_GAMEPAD_X);
-            bool btnY      = (pad->wButtons & XINPUT_GAMEPAD_Y);
-
-            i16 stickLX = pad->sThumbLX;
-            i16 stickLY = pad->sThumbLY;
-            i16 stickRX = pad->sThumbRX;
-            i16 stickRY = pad->sThumbRY;
-        }
-
-        UpdateAndRender(&Win32Screen, &Win32Sound);
-
-        auto dim = GetWindowDimension(window);
-        Win32DisplayBuffer(Win32Screen, deviceContext, dim.Width, dim.Height);
-        ReleaseDC(window, deviceContext);
-
-        // ##### PERFORMANCE
+        // <Performance>
         u64 endCycleCount = __rdtsc();
         u64 cyclesElapsed = endCycleCount - lastCycleCount;
 
@@ -322,13 +366,13 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         f64 megaCyclesPerFrame = f64(cyclesElapsed) / (1000.0 * 1000.0);
 
         char buf[128];
-        WIN32_ASSERT(StringCbPrintfA(buf, sizeof(buf), "%.2f ms/f, %.2f fps, %.2f mc/f\n",
-                                     msPerFrame, framesPerSec, megaCyclesPerFrame));
+        WIN32_CHECK(StringCbPrintfA(buf, sizeof(buf), "%.2f ms/f, %.2f fps, %.2f mc/f\n",
+                                    msPerFrame, framesPerSec, megaCyclesPerFrame));
         OutputDebugStringA(buf);
 
         lastCounter    = endCounter;
         lastCycleCount = endCycleCount;
-        // #####
+        // </Performance>
     }
 
     return 0;

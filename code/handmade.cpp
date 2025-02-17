@@ -1,5 +1,24 @@
 #include "shared.h"
 
+enum ButtonState { JustPressed, Pressed, JustReleased, Released };
+
+enum GamepadButton { Up, Down, Left, Right, A, B, X, Y, ShL, ShR, Start, Back, COUNT };
+
+struct ControllerState {
+    ButtonState buttons[GamepadButton::COUNT];
+    f32         triggerLStart, triggerLEnd, triggerRStart, triggerREnd;
+
+    bool notAnalog;
+    v2   analogLStart, analogLEnd, analogRStart, analogREnd;
+    f32  minX, minY, maxX, maxY;
+};
+
+#define MAX_CONTROLLERS 4
+
+struct InputBuffer {
+    ControllerState controllers[MAX_CONTROLLERS];
+};
+
 struct SoundBuffer {
     u8 *sampleOut;
     u32 byteCount;
@@ -17,20 +36,17 @@ internal void OutputSound(SoundBuffer *buffer) {
 }
 
 struct ScreenBuffer {
-    void *Memory;
-    int   Width, Height;
-    int   BytesPerPixel;
+    u8 *Memory;
+    i32 Width, Height;
+    i32 BytesPerPixel;
 };
 
 internal void RenderWeirdGradient(ScreenBuffer *buffer, int xOffset, int yOffset) {
-    int width  = buffer->Width;
-    int height = buffer->Height;
-
-    int stride = width * buffer->BytesPerPixel;
+    i32 stride = buffer->Width * buffer->BytesPerPixel;
     u8 *row    = (u8 *)buffer->Memory;
-    for (int y = 0; y < height; y++) {
+    for (i32 y = 0; y < buffer->Height; y++) {
         u32 *pixel = (u32 *)row;
-        for (int x = 0; x < width; x++) {
+        for (i32 x = 0; x < buffer->Width; x++) {
             /*
             Pixel: BB GG RR -- (4 bytes)
                    0  1  2  3
@@ -46,7 +62,7 @@ internal void RenderWeirdGradient(ScreenBuffer *buffer, int xOffset, int yOffset
     }
 }
 
-internal void UpdateAndRender(ScreenBuffer *screenBuffer, SoundBuffer *soundBuffer) {
-    OutputSound(soundBuffer);
-    RenderWeirdGradient(screenBuffer, 0, 0);
+internal void UpdateAndRender(InputBuffer *input, ScreenBuffer *screen, SoundBuffer *sound) {
+    OutputSound(sound);
+    RenderWeirdGradient(screen, 0, 0);
 }
