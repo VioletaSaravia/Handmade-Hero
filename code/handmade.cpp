@@ -2,7 +2,23 @@
 
 enum ButtonState : u8 { Released, JustReleased, Pressed, JustPressed };
 
-enum GamepadButton : u8 { Up, Down, Left, Right, A, B, X, Y, ShL, ShR, Start, Back, COUNT };
+enum GamepadButton : u8 {
+    Up,
+    Down,
+    Left,
+    Right,
+    A,
+    B,
+    X,
+    Y,
+    ShL,
+    ShR,
+    Start,
+    Back,
+    ThumbL,
+    ThumbR,
+    COUNT
+};
 
 struct ControllerState {
     bool connected, notAnalog;
@@ -11,16 +27,18 @@ struct ControllerState {
     f32         triggerLStart, triggerLEnd, triggerRStart, triggerREnd;
 
     v2  analogLStart, analogLEnd, analogRStart, analogREnd;
-    f32 minX, minY, maxX, maxY;
+    f32 minX, minY, maxX, maxY;  // TODO(violeta): Deadzones
 };
 
 #define KEY_COUNT 256
 
-// NOTE(violeta): These are win32 key codes. They make the code easy on windows, but they might
-// be a pain in other platforms, but they should work.
+// NOTE(violeta): These are win32 key codes. They're just here to make the code easy on windows.
+// They might be a pain in other platforms, but they should work.
 enum Key : u8 {
+    Ret      = 0x0D,
     Shift    = 0x10,
     Ctrl     = 0x11,
+    Esc      = 0x1B,
     Space    = 0x20,
     KeyLeft  = 0x25,
     KeyUp    = 0x26,
@@ -61,29 +79,35 @@ struct ScreenBuffer {
 };
 
 struct Memory {
-    bool  isInitialized;
     u64   permStoreSize;
     void *permStore;
     u64   scratchStoreSize;
     void *scratchStore;
 };
 
-struct GameState {};
+struct GameState {
+    f64 delta;
+    v2i pos[2];
+};
 
-internal void RenderWeirdGradient(ScreenBuffer *buffer, int xOffset, int yOffset) {
+internal void Render(ScreenBuffer *buffer, const GameState *state) {
     i32 stride = buffer->Width * buffer->BytesPerPixel;
     u8 *row    = (u8 *)buffer->Memory;
     for (i32 y = 0; y < buffer->Height; y++) {
         u32 *pixel = (u32 *)row;
         for (i32 x = 0; x < buffer->Width; x++) {
-            /*
-            Pixel: BB GG RR -- (4 bytes)
-                   0  1  2  3
-            */
-            u8 blue  = u8(x + xOffset);
-            u8 green = u8(y + yOffset);
-            u8 red   = 0;
+            u8 red = 0, green = 0, blue = 0;
 
+            f32 dist;
+            for (i32 i = 0; i < 1; i++) {
+                dist = sqrtf(powf(f32(state->pos[i].x - x), 2) +
+                             powf(f32(state->pos[i].y / 2 - y), 2));
+
+                red += dist < 50 ? 255 : 0;
+            }
+
+            // Pixel: BB GG RR -- (4 bytes)
+            //        0  1  2  3
             *pixel++ = u32(blue | (green << 8) | (red << 16));
         }
 
@@ -91,11 +115,30 @@ internal void RenderWeirdGradient(ScreenBuffer *buffer, int xOffset, int yOffset
     }
 }
 
+internal void InitState(Memory *memory) {
+    GameState *state = (GameState *)memory->permStore;
+
+    *state = {.pos = {{400, 300}}};
+}
+
 internal void UpdateAndRender(Memory *memory, InputBuffer *input, ScreenBuffer *screen,
                               SoundBuffer *sound) {
     Assert(sizeof(memory->permStore) >= sizeof(GameState));
     GameState *state = (GameState *)memory->permStore;
 
+    if (input->keyboard.keys['D'] >= ::Pressed) {
+        state->pos[0].x += 10;
+    }
+    if (input->keyboard.keys['A'] >= ::Pressed) {
+        state->pos[0].x -= 10;
+    }
+    if (input->keyboard.keys['W'] >= ::Pressed) {
+        state->pos[0].y -= 10;
+    }
+    if (input->keyboard.keys['S'] >= ::Pressed) {
+        state->pos[0].y += 10;
+    }
+
     OutputSound(sound);
-    RenderWeirdGradient(screen, 0, 0);
+    Render(screen, state);
 }

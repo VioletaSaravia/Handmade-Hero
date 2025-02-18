@@ -234,8 +234,8 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
         case WM_SYSKEYUP:
         case WM_KEYDOWN:
         case WM_KEYUP: {
-            b32 wasDown = (lParam & (1 << 30));
-            b32 isDown  = (lParam & (1 << 31)) == 0;
+            bool wasDown = (lParam & (1 << 30));
+            bool isDown  = (lParam & (1 << 31)) == 0;
 
             Win32Input.keyboard.keys[wParam] = wasDown && isDown    ? ButtonState::Pressed
                                                : !wasDown && isDown ? ButtonState::JustPressed
@@ -284,6 +284,8 @@ internal void Win32ProcessXInputControllers(InputBuffer *state) {
             (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER),
             (pad->wButtons & XINPUT_GAMEPAD_START),
             (pad->wButtons & XINPUT_GAMEPAD_BACK),
+            (pad->wButtons & XINPUT_GAMEPAD_LEFT_THUMB),
+            (pad->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB),
         };
 
         for (i32 j = 0; j < GamepadButton::COUNT; j++) {
@@ -356,12 +358,14 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     Win32InitWindow(&Win32Screen, instance);
     Win32InitSound(&Win32Sound);
 
-    Win32Memory.permStoreSize    = MB(64);
-    Win32Memory.scratchStoreSize = MB(64);
-    Win32Memory.permStore =
-        VirtualAlloc(0, Win32Memory.permStoreSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    Win32Memory.scratchStore =
-        VirtualAlloc(0, Win32Memory.scratchStoreSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    Win32Memory = {
+        .permStoreSize    = MB(64),
+        .permStore        = VirtualAlloc(0, MB(64), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE),
+        .scratchStoreSize = MB(64),
+        .scratchStore     = VirtualAlloc(0, MB(64), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE),
+    };
+
+    InitState(&Win32Memory);
     // </Init>
 
     // <Performance>
@@ -377,13 +381,11 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
     while (Running) {
         // <Input>
-        for (i32 i = 0; i < 256; i++) {
+        for (i32 i = 0; i < KEY_COUNT; i++) {
             if (Win32Input.keyboard.keys[i] == ButtonState::JustReleased)
                 Win32Input.keyboard.keys[i] = ButtonState::Released;
         }
 
-        // PeekMessageA(..., 0, 0, 0, ..) gets messages from all windows (hWnds) in the application,
-        // without blocking when there's no message.
         MSG message;
         while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE)) {
             if (message.message == WM_QUIT) {
@@ -397,7 +399,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         Win32ProcessXInputControllers(&Win32Input);
         // </Input>
 
-        // MAIN UPDATE FUNCTION
+        // MAIN UPDATE
         UpdateAndRender(&Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
 
         // <Render>
@@ -414,9 +416,11 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         QueryPerformanceCounter(&endCounter);
         i64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
 
-        f64 msPerFrame         = (1000.0 * f64(counterElapsed)) / f64(perfCountFrequency);
-        f64 framesPerSec       = f64(perfCountFrequency) / f64(counterElapsed);
-        f64 megaCyclesPerFrame = f64(cyclesElapsed) / (1000.0 * 1000.0);
+        // TODO(violeta): Is this right?
+        ((GameState *)&Win32Memory)->delta = f64(counterElapsed) / f64(perfCountFrequency);
+        f64 msPerFrame                     = ((GameState *)&Win32Memory)->delta * 1000.0;
+        f64 framesPerSec                   = f64(perfCountFrequency) / f64(counterElapsed);
+        f64 megaCyclesPerFrame             = f64(cyclesElapsed) / (1000.0 * 1000.0);
 
         char buf[128];
         WIN32_CHECK(StringCbPrintfA(buf, sizeof(buf), "%.2f ms/f, %.2f fps, %.2f mc/f\n",
