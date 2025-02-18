@@ -33,7 +33,7 @@ struct ControllerState {
 #define KEY_COUNT 256
 
 // NOTE(violeta): These are win32 key codes. They're just here to make the code easy on windows.
-// They might be a pain in other platforms, but they should work.
+// Might be a pain to adapt to other platforms, but they should work.
 enum Key : u8 {
     Ret      = 0x0D,
     Shift    = 0x10,

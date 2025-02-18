@@ -24,7 +24,8 @@
                 "gdi32.lib",
                 "Xinput.lib",
                 "Xaudio2.lib",
-                "Ole32.lib"
+                "Ole32.lib",
+                "Winmm.lib"
             ],
             "problemMatcher": [
                 "$msCompile"

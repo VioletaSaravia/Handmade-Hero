@@ -79,6 +79,8 @@ void PlatformFreeFileMemory(void *memory) { VirtualFree(memory, 0, MEM_RELEASE);
 struct Win32ScreenBuffer : ScreenBuffer {
     HWND       window;
     HDC        deviceContext;
+    DWORD      refreshRate;
+    i64        perfCountFrequency;
     BITMAPINFO Info;
 };
 global_variable Win32ScreenBuffer Win32Screen;
@@ -353,8 +355,45 @@ internal bool Win32InitWindow(Win32ScreenBuffer *screen, HINSTANCE instance) {
     return true;
 }
 
+internal DWORD Win32GetRefreshRate(HWND window) {
+    HMONITOR monitor = MonitorFromWindow(Win32Screen.window, MONITOR_DEFAULTTONEAREST);
+
+    MONITORINFOEXA monitorInfo = {};
+    monitorInfo.cbSize         = sizeof(MONITORINFOEXA);
+    if (!GetMonitorInfoA(monitor, &monitorInfo))
+        OutputDebugStringA("[WIN32 ERROR] Couldn't get monitor info");
+
+    DEVMODEA dm = {};
+    dm.dmSize   = sizeof(DEVMODEA);
+    if (!EnumDisplaySettingsExA(monitorInfo.szDevice, ENUM_CURRENT_SETTINGS, &dm, EDS_RAWMODE))
+        OutputDebugStringA("[WIN32 ERROR] Couldn't get monitor refresh rate");
+
+    return dm.dmDisplayFrequency;
+}
+
+internal i64 Win32GetWallClock() {
+    LARGE_INTEGER result;
+    QueryPerformanceCounter(&result);
+    return result.QuadPart;
+}
+
+internal i64 Win32InitPerformanceCounter(i64 *freq) {
+    LARGE_INTEGER perfCountFrequencyResult = {};
+    QueryPerformanceFrequency(&perfCountFrequencyResult);
+    *freq = perfCountFrequencyResult.QuadPart;
+
+    return Win32GetWallClock();
+}
+
+internal f64 Win32GetSecondsElapsed(i64 start, i64 end) {
+    return f64(end - start) / f64(Win32Screen.perfCountFrequency);
+}
+
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
     // <Init>
+    u32  desiredSchedulerMs = 1;
+    bool granularSleepOn    = timeBeginPeriod(desiredSchedulerMs);
+
     Win32InitWindow(&Win32Screen, instance);
     Win32InitSound(&Win32Sound);
 
@@ -365,19 +404,16 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         .scratchStore     = VirtualAlloc(0, MB(64), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE),
     };
 
+    Win32Screen.refreshRate = Win32GetRefreshRate(Win32Screen.window);
+    f32 targetSPF           = 1.0f / Win32Screen.refreshRate;
+
     InitState(&Win32Memory);
     // </Init>
 
-    // <Performance>
-    LARGE_INTEGER perfCountFrequencyResult = {};
-    QueryPerformanceFrequency(&perfCountFrequencyResult);
-    i64 perfCountFrequency = perfCountFrequencyResult.QuadPart;
-
-    LARGE_INTEGER lastCounter = {};
-    QueryPerformanceCounter(&lastCounter);
-
+    // <Timing>
+    i64 lastCounter    = Win32InitPerformanceCounter(&Win32Screen.perfCountFrequency);
     u64 lastCycleCount = __rdtsc();
-    // </Performance>
+    // </Timing>
 
     while (Running) {
         // <Input>
@@ -402,34 +438,35 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         // MAIN UPDATE
         UpdateAndRender(&Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
 
+        // <Timing>
+        u64 endCycleCount      = __rdtsc();
+        u64 cyclesElapsed      = endCycleCount - lastCycleCount;
+        f64 megaCyclesPerFrame = f64(cyclesElapsed) / (1000.0 * 1000.0);
+
+        f64 deltaSecs = Win32GetSecondsElapsed(lastCounter, Win32GetWallClock());
+        while (deltaSecs < targetSPF) {
+            if (granularSleepOn) Sleep(DWORD(1000.0 * (targetSPF - deltaSecs)));
+            deltaSecs = Win32GetSecondsElapsed(lastCounter, Win32GetWallClock());
+        }
+        f64 msPerFrame = deltaSecs * 1000.0;
+        f64 msBehind   = (deltaSecs - targetSPF) * 1000.0;
+        f64 fps = f64(Win32Screen.perfCountFrequency) / f64(Win32GetWallClock() - lastCounter);
+
         // <Render>
         v2i dim = GetWindowDimension(Win32Screen.window);
         Win32DisplayBuffer(Win32Screen, Win32Screen.deviceContext, dim.width, dim.height);
         ReleaseDC(Win32Screen.window, Win32Screen.deviceContext);
         // </Render>
 
-        // <Performance>
-        u64 endCycleCount = __rdtsc();
-        u64 cyclesElapsed = endCycleCount - lastCycleCount;
+        char debugBuf[128];
+        WIN32_CHECK(StringCbPrintfA(debugBuf, sizeof(debugBuf),
+                                    "%.2f ms/f (%.2f ms behind target), %.2f fps, %.2f mc/f\n",
+                                    msPerFrame, msBehind, fps, megaCyclesPerFrame));
+        OutputDebugStringA(debugBuf);
 
-        LARGE_INTEGER endCounter;
-        QueryPerformanceCounter(&endCounter);
-        i64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
-
-        // TODO(violeta): Is this right?
-        ((GameState *)&Win32Memory)->delta = f64(counterElapsed) / f64(perfCountFrequency);
-        f64 msPerFrame                     = ((GameState *)&Win32Memory)->delta * 1000.0;
-        f64 framesPerSec                   = f64(perfCountFrequency) / f64(counterElapsed);
-        f64 megaCyclesPerFrame             = f64(cyclesElapsed) / (1000.0 * 1000.0);
-
-        char buf[128];
-        WIN32_CHECK(StringCbPrintfA(buf, sizeof(buf), "%.2f ms/f, %.2f fps, %.2f mc/f\n",
-                                    msPerFrame, framesPerSec, megaCyclesPerFrame));
-        OutputDebugStringA(buf);
-
-        lastCounter    = endCounter;
+        lastCounter    = Win32GetWallClock();  // TODO(violeta): Here or before <Render>?
         lastCycleCount = endCycleCount;
-        // </Performance>
+        // </Timing>
     }
 
     return 0;
