@@ -65,11 +65,11 @@ struct SoundBuffer {
 };
 
 internal void OutputSound(SoundBuffer *buffer) {
-    for (u32 i = 0; i < buffer->byteCount;) {
-        i16 sample             = 0;
-        buffer->sampleOut[i++] = (u8)sample;  // Values are little-endian.
-        buffer->sampleOut[i++] = (u8)(sample >> 8);
-    }
+    // for (u32 i = 0; i < buffer->byteCount;) {
+    //     i16 sample             = 0;
+    //     buffer->sampleOut[i++] = (u8)sample;  // Values are little-endian.
+    //     buffer->sampleOut[i++] = (u8)(sample >> 8);
+    // }
 }
 
 struct ScreenBuffer {
@@ -98,13 +98,13 @@ internal void Render(ScreenBuffer *buffer, const GameState *state) {
         for (i32 x = 0; x < buffer->Width; x++) {
             u8 red = 0, green = 0, blue = 0;
 
-            f32 dist;
-            for (i32 i = 0; i < 1; i++) {
-                dist = sqrtf(powf(f32(state->pos[i].x - x), 2) +
-                             powf(f32(state->pos[i].y / 2 - y), 2));
+            // f32 dist;
+            // for (i32 i = 0; i < 1; i++) {
+            //     dist = sqrtf(powf(f32(state->pos[i].x - x), 2) +
+            //                  powf(f32(state->pos[i].y / 2 - y), 2));
 
-                red += dist < 50 ? 255 : 0;
-            }
+            //     red += dist < 50 ? 255 : 0;
+            // }
 
             // Pixel: BB GG RR -- (4 bytes)
             //        0  1  2  3

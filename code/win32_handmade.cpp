@@ -110,7 +110,7 @@ global_variable bool Running = true;
     }
 #endif
 
-constexpr u16 BITSPERSSAMPLE           = 16;
+constexpr u16 BITSPERSSAMPLE           = 16;  // TODO(violeta): Shouldn't it be 32?
 constexpr u32 SAMPLESPERSEC            = 44100;
 constexpr f64 CYCLESPERSEC             = 220.0;
 constexpr u16 AUDIOBUFFERSIZEINCYCLES  = 10;
@@ -129,21 +129,26 @@ internal void Win32InitSound(Win32SoundBuffer *sound) {
     sound->byteCount     = AUDIOBUFFERSIZEINBYTES;
     sound->sampleOut =
         (u8 *)VirtualAlloc(0, AUDIOBUFFERSIZEINBYTES, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+    WAVEFORMATEX waveFormat    = {};
+    waveFormat.wFormatTag      = WAVE_FORMAT_PCM;
+    waveFormat.nChannels       = 1;  // 1 channel
+    waveFormat.nSamplesPerSec  = SAMPLESPERSEC;
+    waveFormat.nBlockAlign     = waveFormat.nChannels * BITSPERSSAMPLE / 8;
+    waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
+    waveFormat.wBitsPerSample  = BITSPERSSAMPLE;
+    waveFormat.cbSize          = 0;
+
+    WIN32_CHECK(sound->xAudio2->CreateSourceVoice(&sound->xAudio2SourceVoice, &waveFormat));
+
+    f64 phase = {};
     for (u32 i = 0; i < AUDIOBUFFERSIZEINBYTES; i++) {
-        sound->sampleOut[i] = 0;
+        phase += (2 * PI64) / SAMPLESPERCYCLE;
+        i16 sample = (i16)(sin(phase) * INT16_MAX * 0.5);
+        // sound->sampleOut[i] = 0;
+        sound->sampleOut[i++] = (u8)sample;
+        sound->sampleOut[i++] = (u8)(sample >> 8);
     }
-
-    WAVEFORMATEX waveFormat = {
-        .wFormatTag      = WAVE_FORMAT_PCM,
-        .nChannels       = 2,
-        .nSamplesPerSec  = sound->samplesPerSec,
-        .nAvgBytesPerSec = sound->samplesPerSec * ((2 * BITSPERSSAMPLE) / 8),
-        .nBlockAlign     = (2 * BITSPERSSAMPLE) / 8,
-        .wBitsPerSample  = BITSPERSSAMPLE,
-        .cbSize          = 0,
-    };
-
-    sound->xAudio2->CreateSourceVoice(&sound->xAudio2SourceVoice, &waveFormat);
 
     XAUDIO2_BUFFER xAudio2Buffer = {
         .Flags      = XAUDIO2_END_OF_STREAM,
@@ -157,7 +162,10 @@ internal void Win32InitSound(Win32SoundBuffer *sound) {
     };
 
     WIN32_CHECK(sound->xAudio2SourceVoice->SubmitSourceBuffer(&xAudio2Buffer));
-    WIN32_CHECK(sound->xAudio2SourceVoice->Start(0));
+    WIN32_CHECK(sound->xAudio2SourceVoice->Start());
+
+    // XAUDIO2_VOICE_STATE state {};
+    // sound->xAudio2SourceVoice->GetState(&state);
 }
 
 v2i GetWindowDimension(HWND window) {

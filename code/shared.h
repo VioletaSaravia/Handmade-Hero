@@ -16,8 +16,11 @@
 #define local_persist static
 #define global_variable static
 
-#define PI 3.14159265359f
-#define TAU 6.283185307179586f
+#define PI 3.14159274f
+#define TAU 6.28318548f
+
+#define PI64 3.1415926535897931
+#define TAU64 6.2831853071795862
 
 #define KB(val) ((val) * 1024)
 #define MB(val) (KB(val) * 1024)
