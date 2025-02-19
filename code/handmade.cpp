@@ -57,27 +57,6 @@ struct InputBuffer {
     KeyboardState   keyboard;
 };
 
-struct SoundBuffer {
-    u8 *sampleOut;
-    u32 byteCount;
-    u32 sampleCount;
-    u32 samplesPerSec;
-};
-
-internal void OutputSound(SoundBuffer *buffer) {
-    // for (u32 i = 0; i < buffer->byteCount;) {
-    //     i16 sample             = 0;
-    //     buffer->sampleOut[i++] = (u8)sample;  // Values are little-endian.
-    //     buffer->sampleOut[i++] = (u8)(sample >> 8);
-    // }
-}
-
-struct ScreenBuffer {
-    u8 *Memory;
-    i32 Width, Height;
-    i32 BytesPerPixel;
-};
-
 struct Memory {
     u64   permStoreSize;
     void *permStore;
@@ -87,7 +66,23 @@ struct Memory {
 
 struct GameState {
     f64 delta;
+    f64 testPitch;
     v2i pos[2];
+};
+
+struct SoundBuffer {
+    u8 *sampleOut;
+    u32 byteCount;
+    u32 sampleCount;
+    u32 samplesPerSec;
+};
+
+internal void OutputSound(const GameState *state, SoundBuffer *buffer) {}
+
+struct ScreenBuffer {
+    u8 *Memory;
+    i32 Width, Height;
+    i32 BytesPerPixel;
 };
 
 internal void Render(ScreenBuffer *buffer, const GameState *state) {
@@ -118,7 +113,10 @@ internal void Render(ScreenBuffer *buffer, const GameState *state) {
 internal void InitState(Memory *memory) {
     GameState *state = (GameState *)memory->permStore;
 
-    *state = {.pos = {{400, 300}}};
+    *state = {
+        .testPitch = 220.0,
+        .pos       = {{400, 300}},
+    };
 }
 
 internal void UpdateAndRender(Memory *memory, InputBuffer *input, ScreenBuffer *screen,
@@ -139,6 +137,6 @@ internal void UpdateAndRender(Memory *memory, InputBuffer *input, ScreenBuffer *
         state->pos[0].y += 10;
     }
 
-    OutputSound(sound);
+    OutputSound(state, sound);
     Render(screen, state);
 }

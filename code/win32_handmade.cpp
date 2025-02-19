@@ -51,6 +51,7 @@ void *PlatformReadEntireFile(const char *filename) {
     return result;
 };
 
+// TODO(violeta): Untested
 bool PlatformWriteEntireFile(char *filename, u32 size, void *memory) {
     HANDLE handle =
         CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
@@ -110,7 +111,7 @@ global_variable bool Running = true;
     }
 #endif
 
-constexpr u16 BITSPERSSAMPLE           = 16;  // TODO(violeta): Shouldn't it be 32?
+constexpr u16 BITSPERSSAMPLE           = 16;
 constexpr u32 SAMPLESPERSEC            = 44100;
 constexpr f64 CYCLESPERSEC             = 220.0;
 constexpr u16 AUDIOBUFFERSIZEINCYCLES  = 10;
@@ -141,13 +142,13 @@ internal void Win32InitSound(Win32SoundBuffer *sound) {
 
     WIN32_CHECK(sound->xAudio2->CreateSourceVoice(&sound->xAudio2SourceVoice, &waveFormat));
 
-    f64 phase = {};
-    for (u32 i = 0; i < AUDIOBUFFERSIZEINBYTES; i++) {
-        phase += (2 * PI64) / SAMPLESPERCYCLE;
-        i16 sample = (i16)(sin(phase) * INT16_MAX * 0.5);
-        // sound->sampleOut[i] = 0;
-        sound->sampleOut[i++] = (u8)sample;
-        sound->sampleOut[i++] = (u8)(sample >> 8);
+    double   phase{};
+    uint32_t bufferIndex{};
+    while (bufferIndex < AUDIOBUFFERSIZEINBYTES) {
+        phase += (2 * PI) / SAMPLESPERCYCLE;
+        int16_t sample                  = (int16_t)(sin(phase) * INT16_MAX * 0.5);
+        sound->sampleOut[bufferIndex++] = (byte)sample;  // Values are little-endian.
+        sound->sampleOut[bufferIndex++] = (byte)(sample >> 8);
     }
 
     XAUDIO2_BUFFER xAudio2Buffer = {
