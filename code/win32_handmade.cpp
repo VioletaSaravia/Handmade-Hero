@@ -5,8 +5,7 @@
 #include <xaudio2.h>
 #include <Xinput.h>
 
-#include "handmade.cpp"
-#include "shared.h"
+#include "handmade.h"
 
 /*
     TODO: PLATFORM LAYER LIST (INCOMPLETE):
@@ -26,6 +25,36 @@
     - hardware acceleration (opengl/d3d/vulkan/etc.)
     - GetKeyboardLayout()
 */
+
+struct Win32GameCode {
+    HMODULE     dll;
+    GameInit   *Init;
+    GameUpdate *Update;
+};
+
+internal Win32GameCode Win32LoadGame() {
+    Win32GameCode result = {};
+
+    result.dll    = LoadLibraryA("../build/handmade.dll");
+    result.Init   = GameInitStub;
+    result.Update = GameUpdateStub;
+
+    if (!result.dll) {
+        OutputDebugStringA("[WIN32 ERROR] handmade.dll not loaded");
+    } else {
+        result.Init   = (GameInit *)GetProcAddress(result.dll, "game_init");
+        result.Update = (GameUpdate *)GetProcAddress(result.dll, "game_update");
+    }
+
+    return result;
+}
+
+internal void Win32UnloadGame(Win32GameCode *game) {
+    if (game->dll) FreeLibrary(game->dll);
+
+    game->Init   = GameInitStub;
+    game->Update = GameUpdateStub;
+}
 
 void *PlatformReadEntireFile(const char *filename) {
     HANDLE handle =
@@ -134,7 +163,7 @@ internal void Win32InitSound(Win32SoundBuffer *sound) {
     WAVEFORMATEX waveFormat    = {};
     waveFormat.wFormatTag      = WAVE_FORMAT_PCM;
     waveFormat.nChannels       = 1;  // 1 channel
-    waveFormat.nSamplesPerSec  = SAMPLESPERSEC;
+    waveFormat.nSamplesPerSec  = sound->samplesPerSec;
     waveFormat.nBlockAlign     = waveFormat.nChannels * BITSPERSSAMPLE / 8;
     waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
     waveFormat.wBitsPerSample  = BITSPERSSAMPLE;
@@ -400,6 +429,8 @@ internal f64 Win32GetSecondsElapsed(i64 start, i64 end) {
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
     // <Init>
+    Win32GameCode game = Win32LoadGame();
+
     u32  desiredSchedulerMs = 1;
     bool granularSleepOn    = timeBeginPeriod(desiredSchedulerMs);
 
@@ -416,7 +447,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     Win32Screen.refreshRate = Win32GetRefreshRate(Win32Screen.window);
     f32 targetSPF           = 1.0f / Win32Screen.refreshRate;
 
-    InitState(&Win32Memory);
+    game.Init(&Win32Memory);
     // </Init>
 
     // <Timing>
@@ -445,7 +476,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         // </Input>
 
         // MAIN UPDATE
-        UpdateAndRender(&Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
+        game.Update(&Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
 
         // <Timing>
         u64 endCycleCount      = __rdtsc();
