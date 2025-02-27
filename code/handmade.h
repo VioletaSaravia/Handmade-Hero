@@ -3,7 +3,9 @@
 #include <cmath>
 #include <cstdint>
 
-// TODO(violeta): This doesn't crash the program on PS1, I think.
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+
+// TODO(violeta): Creería que en PSX esto no crashea el programa.
 #ifdef DEBUG
 #define Assert(expression) \
     if (!(expression)) {   \
@@ -55,7 +57,7 @@ union v2i {
     };
 };
 
-#ifndef HANDMADE_INTERNAL  // TODO invert
+#ifdef HANDMADE_INTERNAL
 void* PlatformReadEntireFile(char* filename);
 void  PlatformFreeFileMemory(void* memory);
 bool  PlatformWriteEntireFile(char* filename, u32 size, void* memory);
@@ -91,9 +93,7 @@ struct ControllerState {
     f32 minX, minY, maxX, maxY;  // TODO(violeta): Deadzones
 };
 
-#define KEY_COUNT 256
-
-// NOTE(violeta): These are win32 key codes. They're just here to make the code easy on windows.
+// TODO(violeta): These are win32 key codes. They're just here to make the code easy on windows.
 // Might be a pain to adapt to other platforms, but they should work.
 enum Key : u8 {
     Ret      = 0x0D,
@@ -106,6 +106,8 @@ enum Key : u8 {
     KeyRight = 0x27,
     KeyDown  = 0x28,
 };
+
+#define KEY_COUNT 256
 
 struct KeyboardState {
     ButtonState keys[KEY_COUNT];
@@ -131,11 +133,18 @@ struct GameState {
     v2i pos[2];
 };
 
-struct SoundBuffer {
-    u8* sampleOut;
+// TODO(violeta): Remove
+struct TestSound {
+    u8* buf;
     u32 byteCount;
     u32 sampleCount;
-    u32 samplesPerSec;
+};
+
+struct SoundBuffer {
+    TestSound testSound;
+
+    u32 sampleRate;
+    u32 bitRate;
 };
 
 struct ScreenBuffer {
