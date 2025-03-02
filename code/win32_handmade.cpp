@@ -1,8 +1,10 @@
-#include <strsafe.h>  // StringCbPrintfA
+#include <strsafe.h>  // StringCbPrintfA()
 #include <Windows.h>
 #include <xaudio2.h>
 #include <Xinput.h>
 
+#include "glad.c"
+#include "glad/glad.h"
 #include "handmade.h"
 
 /*  PLATFORM LAYER LIST (INCOMPLETE):
@@ -63,7 +65,7 @@ void *PlatformReadEntireFile(const char *filename) {
 
     CloseHandle(handle);
 
-    Assert(sizeRead == size);
+    Assert(sizeRead.QuadPart == size.QuadPart);
 
     return result;
 };
@@ -286,8 +288,8 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
             PAINTSTRUCT paint;
             HDC         deviceContext = BeginPaint(window, &paint);
 
-            auto dim = GetWindowDimension(window);
-            Win32DisplayBuffer(Win32Screen, deviceContext, dim.width, dim.height);
+            // auto dim = GetWindowDimension(window);
+            // Win32DisplayBuffer(Win32Screen, deviceContext, dim.width, dim.height);
 
             EndPaint(window, &paint);
         } break;
@@ -501,9 +503,10 @@ internal void Win32TimeAndRender(Win32TimingBuffer *state) {
     f64 fps = f64(Win32Screen.perfCountFrequency) / f64(Win32GetWallClock() - state->lastCounter);
 
     // <Render>
-    v2i dim = GetWindowDimension(Win32Screen.window);
-    Win32DisplayBuffer(Win32Screen, Win32Screen.deviceContext, dim.width, dim.height);
-    ReleaseDC(Win32Screen.window, Win32Screen.deviceContext);
+    glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    SwapBuffers(Win32Screen.deviceContext);
+    ReleaseDC(Win32Screen.window, Win32Screen.deviceContext);  // TODO(violeta): Para qué es esto?
     // </Render>
 
     char debugBuf[128];
@@ -516,14 +519,37 @@ internal void Win32TimeAndRender(Win32TimingBuffer *state) {
     state->lastCycleCount = endCycleCount;
 }
 
-global_variable Win32GameCode Win32Game;
+internal void Win32InitOpenGL(HWND window) {
+    PIXELFORMATDESCRIPTOR desiredPixelFormat = {
+        .nSize      = sizeof(PIXELFORMATDESCRIPTOR),
+        .nVersion   = 1,
+        .dwFlags    = PFD_SUPPORT_OPENGL | PFD_DRAW_TO_WINDOW | PFD_DOUBLEBUFFER,
+        .iPixelType = PFD_TYPE_RGBA,
+        .cColorBits = 32,
+        .cAlphaBits = 8,
+    };
+
+    HDC windowDC = GetDC(window);
+
+    i32 suggestedPixelFormatIndex = ChoosePixelFormat(windowDC, &desiredPixelFormat);
+
+    PIXELFORMATDESCRIPTOR suggestedPixelFormat = {};
+    DescribePixelFormat(windowDC, suggestedPixelFormatIndex, sizeof(PIXELFORMATDESCRIPTOR),
+                        &suggestedPixelFormat);
+    SetPixelFormat(windowDC, suggestedPixelFormatIndex, &suggestedPixelFormat);
+
+    HGLRC openGLRC = wglCreateContext(windowDC);
+
+    if (!wglMakeCurrent(windowDC, openGLRC)) UNREACHABLE;
+
+    ReleaseDC(window, windowDC);
+}
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
-    Win32Game   = Win32LoadGame();
-    Win32Screen = Win32InitWindow(instance);
-    Win32Sound  = Win32InitSound();
-
-    SoundTone test = Win32PlayTestTone(&Win32Sound);
+    Win32GameCode game = Win32LoadGame();
+    Win32Screen        = Win32InitWindow(instance);
+    Win32InitOpenGL(Win32Screen.window);
+    Win32Sound = Win32InitSound();
 
     Win32Memory = {
         .permStoreSize    = MB(64),
@@ -531,7 +557,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         .scratchStoreSize = MB(64),
         .scratchStore     = VirtualAlloc(0, MB(64), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE),
     };
-    Win32Game.Init(&Win32Memory);
+    game.Init(&Win32Memory);
 
     Win32Timing = {
         .desiredSchedulerMs = 1,
@@ -542,11 +568,13 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         .delta              = Win32Timing.targetSPF,
     };
 
+    SoundTone test = Win32PlayTestTone(&Win32Sound);
+
     while (Running) {
         Win32ProcessKeyboard(&Win32Input);
         Win32ProcessXInputControllers(&Win32Input);
 
-        Win32Game.Update(Win32Timing.delta, &Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
+        game.Update(Win32Timing.delta, &Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
         Win32TimeAndRender(&Win32Timing);
     }
 

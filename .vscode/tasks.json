@@ -39,7 +39,7 @@
             "label": "C/C++: cl.exe Handmade Windows build",
             "command": "cl.exe",
             "args": [
-                "/DHANDMADE_INTERNAL", // TODO(violeta): test
+                "/I${workspaceFolder}\\include",
                 "/Zi",
                 "/nologo",
                 "/GR-", // No c++ runtime info
@@ -60,7 +60,8 @@
                 "Xinput.lib",
                 "Xaudio2.lib",
                 "Ole32.lib",
-                "Winmm.lib"
+                "Winmm.lib",
+                "opengl32.lib"
             ],
             "problemMatcher": [
                 "$msCompile"

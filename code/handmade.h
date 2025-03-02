@@ -4,12 +4,14 @@
 #include <cstdint>
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+#define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
 
-// TODO(violeta): Creería que en PSX esto no crashea el programa.
-#ifdef DEBUG
+#define UNREACHABLE (*(int*)0 = 0)
+
+#ifdef HANDMADE_INTERNAL
 #define Assert(expression) \
     if (!(expression)) {   \
-        *(int*)0 = 0;      \
+        UNREACHABLE;       \
     }
 #else
 #define Assert(expression)
