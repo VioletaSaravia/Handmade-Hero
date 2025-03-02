@@ -130,19 +130,10 @@ struct Memory {
 struct GameState {
     f64 delta;
     f64 testPitch;
-    v2i pos[2];
-};
-
-// TODO(violeta): Remove
-struct TestSound {
-    u8* buf;
-    u32 byteCount;
-    u32 sampleCount;
+    v2  pos[2];
 };
 
 struct SoundBuffer {
-    TestSound testSound;
-
     u32 sampleRate;
     u32 bitRate;
 };
@@ -153,8 +144,9 @@ struct ScreenBuffer {
     i32 BytesPerPixel;
 };
 
-#define GAME_UPDATE(name) \
-    void name(Memory* memory, InputBuffer* input, ScreenBuffer* screen, SoundBuffer* sound)
+#define GAME_UPDATE(name)                                                          \
+    void name(f64 delta, Memory* memory, InputBuffer* input, ScreenBuffer* screen, \
+              SoundBuffer* sound)
 typedef GAME_UPDATE(GameUpdate);
 extern "C" GAME_UPDATE(GameUpdateStub) {}
 

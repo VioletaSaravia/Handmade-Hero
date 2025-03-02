@@ -5,22 +5,22 @@
 
 #include "handmade.h"
 
-/*  TODO: PLATFORM LAYER LIST (INCOMPLETE):
+/*  PLATFORM LAYER LIST (INCOMPLETE):
 
-    - Savegame locations
-    - getting handle to executable file
-    - asset loading path
-    - threading
-    - raw input (multiple keyb support?)
-    - sleep/timebegin period
-    - ClipCursor() (for multi monitor)
-    - fullscreen support
-    - WM_SETCURSOR (cursor visibility)
-    - QueryCancelAutoplay()
-    - WM_ACTIVATEAPP (for when app is not active)
-    - blit speed improvements (bitblt)
-    - hardware acceleration (opengl/d3d/vulkan/etc.)
-    - GetKeyboardLayout()
+    - [ ] Savegame locations
+    - [ ] getting handle to executable file
+    - [ ] asset loading path
+    - [ ] threading
+    - [ ] raw input (multiple keyb support?)
+    - [ ] sleep/timebegin period
+    - [ ] ClipCursor() (for multi monitor)
+    - [ ] fullscreen support
+    - [ ] WM_SETCURSOR (cursor visibility)
+    - [ ] QueryCancelAutoplay()
+    - [ ] WM_ACTIVATEAPP (for when app is not active)
+    - [ ] blit speed improvements (bitblt)
+    - [ ] hardware acceleration (opengl/d3d/vulkan/etc.)
+    - [ ] GetKeyboardLayout()
 */
 
 // <Debug>
@@ -160,39 +160,56 @@ internal Win32SoundBuffer Win32InitSound() {
 
     // <Test Sine>
 
-    u32 cyclesPerSec       = 220.0;
-    f32 samplesPerCycle    = u32(sound.sampleRate / cyclesPerSec);
-    u16 bufferSizeInCycles = 10;
+    // </Test Sine>
 
-    sound.testSound.sampleCount = samplesPerCycle * bufferSizeInCycles;
-    sound.testSound.byteCount   = sound.testSound.sampleCount * sound.bitRate / 8;
-    sound.testSound.buf =
-        (u8 *)VirtualAlloc(0, sound.testSound.byteCount, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    return sound;
+}
+
+struct SoundTone {
+    u8 *buf;
+    u32 byteCount;
+    u32 sampleCount;
+
+    u32 cyclesPerSec;
+    f32 samplesPerCycle;
+    u16 bufferSizeInCycles;
+
+    IXAudio2SourceVoice *xAudio2Voice;
+};
+
+internal SoundTone Win32PlayTestTone(const Win32SoundBuffer *buf) {
+    SoundTone sound = {.cyclesPerSec       = 220,
+                       .samplesPerCycle    = f32(buf->sampleRate / 220.0),
+                       .bufferSizeInCycles = 10};
+
+    sound.sampleCount = sound.samplesPerCycle * sound.bufferSizeInCycles;
+    sound.byteCount   = sound.sampleCount * buf->bitRate / 8;
+    sound.buf = (u8 *)VirtualAlloc(0, sound.byteCount, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 
     WAVEFORMATEX waveFormat    = {};
     waveFormat.wFormatTag      = WAVE_FORMAT_PCM;
     waveFormat.nChannels       = 1;
-    waveFormat.nSamplesPerSec  = sound.sampleRate;
-    waveFormat.nBlockAlign     = waveFormat.nChannels * sound.bitRate / 8;
+    waveFormat.nSamplesPerSec  = buf->sampleRate;
+    waveFormat.nBlockAlign     = waveFormat.nChannels * buf->bitRate / 8;
     waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
-    waveFormat.wBitsPerSample  = sound.bitRate;
+    waveFormat.wBitsPerSample  = buf->bitRate;
     waveFormat.cbSize          = 0;
 
-    WIN32_CHECK(sound.xAudio2->CreateSourceVoice(&sound.xAudio2TestSourceVoice, &waveFormat));
+    WIN32_CHECK(buf->xAudio2->CreateSourceVoice(&sound.xAudio2Voice, &waveFormat));
 
     double   phase{};
     uint32_t bufferIndex{};
-    while (bufferIndex < sound.testSound.byteCount) {
-        phase += (2 * PI) / samplesPerCycle;
-        int16_t sample                     = (int16_t)(sin(phase) * INT16_MAX * 0.5);
-        sound.testSound.buf[bufferIndex++] = (byte)sample;  // Values are little-endian.
-        sound.testSound.buf[bufferIndex++] = (byte)(sample >> 8);
+    while (bufferIndex < sound.byteCount) {
+        phase += (2 * PI) / sound.samplesPerCycle;
+        int16_t sample           = (int16_t)(sin(phase) * INT16_MAX * 0.5);
+        sound.buf[bufferIndex++] = (byte)sample;  // Values are little-endian.
+        sound.buf[bufferIndex++] = (byte)(sample >> 8);
     }
 
     XAUDIO2_BUFFER xAudio2Buffer = {
         .Flags      = XAUDIO2_END_OF_STREAM,
-        .AudioBytes = sound.testSound.byteCount,
-        .pAudioData = sound.testSound.buf,
+        .AudioBytes = sound.byteCount,
+        .pAudioData = sound.buf,
         .PlayBegin  = 0,
         .PlayLength = 0,
         .LoopBegin  = 0,
@@ -200,9 +217,8 @@ internal Win32SoundBuffer Win32InitSound() {
         .LoopCount  = XAUDIO2_LOOP_INFINITE,
     };
 
-    WIN32_CHECK(sound.xAudio2TestSourceVoice->SubmitSourceBuffer(&xAudio2Buffer));
-    WIN32_CHECK(sound.xAudio2TestSourceVoice->Start());
-    // </Test Sine>
+    WIN32_CHECK(sound.xAudio2Voice->SubmitSourceBuffer(&xAudio2Buffer));
+    WIN32_CHECK(sound.xAudio2Voice->Start());
 
     return sound;
 }
@@ -297,6 +313,23 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
     }
 
     return result;
+}
+
+internal void Win32ProcessKeyboard(InputBuffer *state) {
+    for (i32 i = 0; i < KEY_COUNT; i++) {
+        if (state->keyboard.keys[i] == ButtonState::JustReleased)
+            state->keyboard.keys[i] = ButtonState::Released;
+    }
+
+    MSG message;
+    while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE)) {
+        if (message.message == WM_QUIT) {
+            Running = false;
+        }
+
+        TranslateMessage(&message);
+        DispatchMessageA(&message);
+    }
 }
 
 #define MAX_CONTROLLERS (MIN(XUSER_MAX_COUNT, CONTROLLER_COUNT))
@@ -394,7 +427,7 @@ internal DWORD Win32GetRefreshRate(HWND window) {
 
 internal Win32ScreenBuffer Win32InitWindow(HINSTANCE instance) {
     Win32ScreenBuffer screen = {};
-    Win32ResizeDIBSection(&screen, 1280, 720);
+    Win32ResizeDIBSection(&screen, 960, 540);
 
     WNDCLASSA windowClass = {
         .style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
@@ -441,13 +474,56 @@ internal f64 Win32GetSecondsElapsed(i64 start, i64 end) {
     return f64(end - start) / f64(Win32Screen.perfCountFrequency);
 }
 
+struct Win32TimingBuffer {
+    // Used by Sleep()
+    u32  desiredSchedulerMs;
+    bool granularSleepOn;
+
+    f64 targetSPF;
+    i64 lastCounter;
+    u64 lastCycleCount;
+    f64 delta;
+};
+global_variable Win32TimingBuffer Win32Timing;
+
+internal void Win32TimeAndRender(Win32TimingBuffer *state) {
+    u64 endCycleCount      = __rdtsc();
+    u64 cyclesElapsed      = endCycleCount - state->lastCycleCount;
+    f64 megaCyclesPerFrame = f64(cyclesElapsed) / (1000.0 * 1000.0);
+
+    state->delta = Win32GetSecondsElapsed(state->lastCounter, Win32GetWallClock());
+    while (state->delta < state->targetSPF) {
+        if (state->granularSleepOn) Sleep(DWORD(1000.0 * (state->targetSPF - state->delta)));
+        state->delta = Win32GetSecondsElapsed(state->lastCounter, Win32GetWallClock());
+    }
+    f64 msPerFrame = state->delta * 1000.0;
+    f64 msBehind   = (state->delta - state->targetSPF) * 1000.0;
+    f64 fps = f64(Win32Screen.perfCountFrequency) / f64(Win32GetWallClock() - state->lastCounter);
+
+    // <Render>
+    v2i dim = GetWindowDimension(Win32Screen.window);
+    Win32DisplayBuffer(Win32Screen, Win32Screen.deviceContext, dim.width, dim.height);
+    ReleaseDC(Win32Screen.window, Win32Screen.deviceContext);
+    // </Render>
+
+    char debugBuf[128];
+    WIN32_CHECK(StringCbPrintfA(debugBuf, sizeof(debugBuf),
+                                "%.2f ms/f (%.2f ms behind target), %.2f fps, %.2f mc/f\n",
+                                msPerFrame, msBehind, fps, megaCyclesPerFrame));
+    OutputDebugStringA(debugBuf);
+
+    state->lastCounter    = Win32GetWallClock();
+    state->lastCycleCount = endCycleCount;
+}
+
 global_variable Win32GameCode Win32Game;
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
-    // <Init>
     Win32Game   = Win32LoadGame();
     Win32Screen = Win32InitWindow(instance);
     Win32Sound  = Win32InitSound();
+
+    SoundTone test = Win32PlayTestTone(&Win32Sound);
 
     Win32Memory = {
         .permStoreSize    = MB(64),
@@ -456,72 +532,22 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         .scratchStore     = VirtualAlloc(0, MB(64), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE),
     };
     Win32Game.Init(&Win32Memory);
-    // </Init>
 
-    // <Timing>
-    // Used by Sleep()
-    u32  desiredSchedulerMs = 1;
-    bool granularSleepOn    = timeBeginPeriod(desiredSchedulerMs);
-
-    f32 targetSPF      = 1.0f / Win32Screen.refreshRate;
-    i64 lastCounter    = Win32InitPerformanceCounter(&Win32Screen.perfCountFrequency);
-    u64 lastCycleCount = __rdtsc();
-    // </Timing>
+    Win32Timing = {
+        .desiredSchedulerMs = 1,
+        .granularSleepOn    = bool(timeBeginPeriod(1)),
+        .targetSPF          = 1.0 / (Win32Screen.refreshRate / 2),
+        .lastCounter        = Win32InitPerformanceCounter(&Win32Screen.perfCountFrequency),
+        .lastCycleCount     = __rdtsc(),
+        .delta              = Win32Timing.targetSPF,
+    };
 
     while (Running) {
-        // <Input>
-
-        // Win32ProcessKeyboard(&Win32Input);
-        for (i32 i = 0; i < KEY_COUNT; i++) {
-            if (Win32Input.keyboard.keys[i] == ButtonState::JustReleased)
-                Win32Input.keyboard.keys[i] = ButtonState::Released;
-        }
-
-        MSG message;
-        while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE)) {
-            if (message.message == WM_QUIT) {
-                Running = false;
-            }
-
-            TranslateMessage(&message);
-            DispatchMessageA(&message);
-        }
-
+        Win32ProcessKeyboard(&Win32Input);
         Win32ProcessXInputControllers(&Win32Input);
-        // </Input>
 
-        // MAIN UPDATE
-        Win32Game.Update(&Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
-
-        // <Timing>
-        u64 endCycleCount      = __rdtsc();
-        u64 cyclesElapsed      = endCycleCount - lastCycleCount;
-        f64 megaCyclesPerFrame = f64(cyclesElapsed) / (1000.0 * 1000.0);
-
-        f64 deltaSecs = Win32GetSecondsElapsed(lastCounter, Win32GetWallClock());
-        while (deltaSecs < targetSPF) {
-            if (granularSleepOn) Sleep(DWORD(1000.0 * (targetSPF - deltaSecs)));
-            deltaSecs = Win32GetSecondsElapsed(lastCounter, Win32GetWallClock());
-        }
-        f64 msPerFrame = deltaSecs * 1000.0;
-        f64 msBehind   = (deltaSecs - targetSPF) * 1000.0;
-        f64 fps = f64(Win32Screen.perfCountFrequency) / f64(Win32GetWallClock() - lastCounter);
-
-        // <Render>
-        v2i dim = GetWindowDimension(Win32Screen.window);
-        Win32DisplayBuffer(Win32Screen, Win32Screen.deviceContext, dim.width, dim.height);
-        ReleaseDC(Win32Screen.window, Win32Screen.deviceContext);
-        // </Render>
-
-        char debugBuf[128];
-        WIN32_CHECK(StringCbPrintfA(debugBuf, sizeof(debugBuf),
-                                    "%.2f ms/f (%.2f ms behind target), %.2f fps, %.2f mc/f\n",
-                                    msPerFrame, msBehind, fps, megaCyclesPerFrame));
-        OutputDebugStringA(debugBuf);
-
-        lastCounter    = Win32GetWallClock();
-        lastCycleCount = endCycleCount;
-        // </Timing>
+        Win32Game.Update(Win32Timing.delta, &Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
+        Win32TimeAndRender(&Win32Timing);
     }
 
     return 0;
