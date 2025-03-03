@@ -7,20 +7,20 @@ bool PlatformWriteEntireFile(char *filename, u32 size, void *memory) { return fa
 void PlatformFreeFileMemory(void *memory) {}
 
 struct ExampleMemoryArena : Memory {};
-global_variable ExampleMemoryArena ExampleMemory;
+global ExampleMemoryArena ExampleMemory;
 
 struct ExampleScreenBuffer : ScreenBuffer {};
-global_variable ExampleScreenBuffer ExampleScreen;
+global ExampleScreenBuffer ExampleScreen;
 
 internal bool ExampleInitWindow(ExampleScreenBuffer *screen) { return false; }
 
 struct ExampleSoundBuffer : SoundBuffer {};
-global_variable ExampleSoundBuffer ExampleSound;
+global ExampleSoundBuffer ExampleSound;
 
 internal void ExampleInitSound(ExampleSoundBuffer *sound) {}
 
 struct ExampleInputBuffer : InputBuffer {};
-global_variable ExampleInputBuffer ExampleInput;
+global ExampleInputBuffer ExampleInput;
 
 internal void ExampleProcessInput(ExampleInputBuffer *state) {}
 
@@ -28,7 +28,7 @@ struct ExampleGameCode {
     GameInit   *Init;
     GameUpdate *Update;
 };
-global_variable ExampleGameCode Game;
+global ExampleGameCode Game;
 
 internal ExampleGameCode ExampleLoadGame() { return {}; }
 
@@ -36,7 +36,7 @@ internal void ExampleUpdate() {
     Game.Update(&ExampleMemory, &ExampleInput, &ExampleScreen, &ExampleSound);
 }
 
-global_variable bool Running = true;
+global bool Running = true;
 
 i32 main() {
     ExampleInitWindow(&ExampleScreen);

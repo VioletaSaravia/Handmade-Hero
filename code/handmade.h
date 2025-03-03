@@ -19,7 +19,7 @@
 
 #define internal static
 #define local_persist static
-#define global_variable static
+#define global static
 
 #define PI 3.14159274f
 #define TAU 6.28318548f

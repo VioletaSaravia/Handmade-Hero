@@ -1,10 +1,4 @@
-#include <strsafe.h>  // StringCbPrintfA()
-#include <Windows.h>
-#include <xaudio2.h>
-#include <Xinput.h>
-
-#include "glad/glad.h"
-#include "handmade.h"
+#include "win32_handmade.h"
 
 /*  PLATFORM LAYER LIST (INCOMPLETE):
 
@@ -23,78 +17,6 @@
     - [ ] hardware acceleration (opengl/d3d/vulkan/etc.)
     - [ ] GetKeyboardLayout()
 */
-
-// <Debug>
-#ifndef DEBUG
-#define WIN32_CHECK(func) (func)
-#else
-#define WIN32_CHECK(func)                                                        \
-    if (FAILED(func)) {                                                          \
-        char buf[32];                                                            \
-        StringCbPrintfA(buf, sizeof(buf), "[WIN32 ERROR] %d\n", GetLastError()); \
-        OutputDebugStringA(buf);                                                 \
-    }
-#endif
-
-#ifndef DEBUG
-#define WIN32_LOG(str)
-#else
-#define WIN32_LOG(str)                                            \
-    char buf[128];                                                \
-    StringCbPrintfA(buf, sizeof(buf), "[WIN32 ERROR] %s\n", str); \
-    OutputDebugStringA(buf);
-#endif
-
-void *PlatformReadEntireFile(const char *filename) {
-    HANDLE handle =
-        CreateFileA(filename, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, 0);
-    Assert(handle != INVALID_HANDLE_VALUE);
-
-    LARGE_INTEGER size     = {};
-    LARGE_INTEGER sizeRead = {};
-
-    bool ok = GetFileSizeEx(handle, &size);
-    Assert(ok);
-    Assert(size.HighPart == 0);  // 4GB+ reads not supported >:(
-
-    void *result = VirtualAlloc(0, size.LowPart, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-
-    ok = ReadFile(handle, result, size.LowPart, &sizeRead.LowPart, 0);
-    Assert(ok);
-
-    CloseHandle(handle);
-
-    Assert(sizeRead.QuadPart == size.QuadPart);
-
-    return result;
-};
-
-// TODO(violeta): Untested
-bool PlatformWriteEntireFile(char *filename, u32 size, void *memory) {
-    HANDLE handle =
-        CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
-
-    if (handle == INVALID_HANDLE_VALUE) {
-        WIN32_LOG("Error open file for writing");
-        return false;
-    }
-
-    DWORD sizeWritten = 0;
-
-    bool ok = WriteFile(handle, memory, size, &sizeWritten, 0);
-
-    CloseHandle(handle);
-
-    if (!ok || sizeWritten != size) {
-        WIN32_LOG("Error writing file");
-        return false;
-    }
-
-    return true;
-};
-
-void PlatformFreeFileMemory(void *memory) { VirtualFree(memory, 0, MEM_RELEASE); };
-// </Debug>
 
 struct Win32GameCode {
     HMODULE     dll;
@@ -133,21 +55,21 @@ struct Win32ScreenBuffer : ScreenBuffer {
     i64        perfCountFrequency;
     BITMAPINFO Info;
 };
-global_variable Win32ScreenBuffer Win32Screen;
+global Win32ScreenBuffer Win32Screen;
 
 struct Win32InputBuffer : InputBuffer {};
-global_variable Win32InputBuffer Win32Input;
+global Win32InputBuffer Win32Input;
 
-global_variable Memory Win32Memory;
+global Memory Win32Memory;
 
-global_variable bool Running = true;
+global bool Running = true;
 
 struct Win32SoundBuffer : SoundBuffer {
     IXAudio2               *xAudio2;
     IXAudio2MasteringVoice *xAudio2MasteringVoice;
     IXAudio2SourceVoice    *xAudio2TestSourceVoice;
 };
-global_variable Win32SoundBuffer Win32Sound;
+global Win32SoundBuffer Win32Sound;
 
 internal Win32SoundBuffer Win32InitSound() {
     Win32SoundBuffer sound = {};
@@ -422,7 +344,7 @@ internal DWORD Win32GetRefreshRate(HWND window) {
     return dm.dmDisplayFrequency;
 }
 
-global_variable v2i WindowSize = {800, 600};
+global v2i WindowSize = {800, 600};
 
 internal Win32ScreenBuffer Win32InitWindow(HINSTANCE instance) {
     Win32ScreenBuffer screen = {};
@@ -483,26 +405,7 @@ struct Win32TimingBuffer {
     u64 lastCycleCount;
     f64 delta;
 };
-global_variable Win32TimingBuffer Win32Timing;
-
-global_variable const f32 TriangleVertices[] = {-0.5f, -0.5f, 0.0f, 0.5f, -0.5f,
-                                                0.0f,  0.0f,  0.5f, 0.0f};
-
-global_variable const f32 RectVertices[] = {
-    0.5f,  0.5f,  0.0f,  // top right
-    0.5f,  -0.5f, 0.0f,  // bottom right
-    -0.5f, -0.5f, 0.0f,  // bottom left
-    -0.5f, 0.5f,  0.0f   // top left
-};
-global_variable const u32 RectIndices[] = {
-    // note that we start from 0!
-    0, 1, 3,  // first triangle
-    1, 2, 3   // second triangle
-};
-
-global_variable u32 DefaultRectangleVAO;
-global_variable u32 DefaultTriangleVAO;
-global_variable u32 DefaultShader;
+global Win32TimingBuffer Win32Timing;
 
 internal void Win32TimeAndRender(Win32TimingBuffer *state) {
     u64 endCycleCount      = __rdtsc();
@@ -512,8 +415,10 @@ internal void Win32TimeAndRender(Win32TimingBuffer *state) {
     state->delta = Win32GetSecondsElapsed(state->lastCounter, Win32GetWallClock());
     while (state->delta < state->targetSPF) {
         if (state->granularSleepOn) Sleep(DWORD(1000.0 * (state->targetSPF - state->delta)));
+
         state->delta = Win32GetSecondsElapsed(state->lastCounter, Win32GetWallClock());
     }
+
     f64 msPerFrame = state->delta * 1000.0;
     f64 msBehind   = (state->delta - state->targetSPF) * 1000.0;
     f64 fps = f64(Win32Screen.perfCountFrequency) / f64(Win32GetWallClock() - state->lastCounter);
@@ -522,15 +427,10 @@ internal void Win32TimeAndRender(Win32TimingBuffer *state) {
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glUseProgram(DefaultShader);
-
-    glBindVertexArray(DefaultRectangleVAO);
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-    glBindVertexArray(0);
-
-    glBindVertexArray(DefaultTriangleVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-    glBindVertexArray(0);
+    // DRAW
+    for (u32 i = 0; i < ObjCount; i++) {
+        DrawObject3D(Objects[i]);
+    }
 
     SwapBuffers(Win32Screen.deviceContext);
 
@@ -552,8 +452,7 @@ void *Win32GetGLProcAddress(const char *name) {
 
     if (p == 0 || (p == (void *)0x1) || (p == (void *)0x2) || (p == (void *)0x3) ||
         (p == (void *)-1)) {
-        HMODULE module = LoadLibraryA("opengl32.dll");
-        p              = (void *)GetProcAddress(module, name);
+        p = (void *)GetProcAddress(LoadLibraryA("opengl32.dll"), name);
     }
 
     return p;
@@ -583,124 +482,7 @@ internal void Win32InitOpenGL(HWND window) {
     if (!wglMakeCurrent(windowDC, openGLRC)) UNREACHABLE;
     if (!gladLoadGLLoader((GLADloadproc)Win32GetGLProcAddress)) UNREACHABLE;
 
-    // <DefaultShader>
-    const char *defaultVertShader =
-        "#version 460 core\n"
-        "layout (location = 0) in vec3 aPos;\n"
-        "void main()\n"
-        "{\n"
-        " gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
-        "}\0";
-
-    const char *defaultFragShader =
-        "#version 460 core\n"
-        "out vec4 FragColor;\n"
-        "void main()\n"
-        "{\n"
-        "FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n"
-        "}\0";
-
-    u32 vertShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertShader, 1, &defaultVertShader, NULL);
-    glCompileShader(vertShader);
-
-    i32 ok;
-    glGetShaderiv(vertShader, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char infoLog[512];
-        glGetShaderInfoLog(vertShader, 512, NULL, infoLog);
-        char buf[512];
-        WIN32_CHECK(StringCbPrintfA(buf, sizeof(buf), "[SHADER ERROR] %s\n", infoLog));
-        OutputDebugStringA(buf);
-    }
-
-    u32 fragShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragShader, 1, &defaultFragShader, NULL);
-    glCompileShader(fragShader);
-
-    DefaultShader = glCreateProgram();
-    glAttachShader(DefaultShader, vertShader);
-    glAttachShader(DefaultShader, fragShader);
-    glLinkProgram(DefaultShader);
-
-    glGetProgramiv(DefaultShader, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        char infoLog[512];
-        glGetProgramInfoLog(DefaultShader, 512, NULL, infoLog);
-        char buf[512];
-        WIN32_CHECK(StringCbPrintfA(buf, sizeof(buf), "[SHADER ERROR] %s\n", infoLog));
-        OutputDebugStringA(buf);
-    }
-
-    glDeleteShader(vertShader);
-    glDeleteShader(fragShader);
-    // </DefaultShader>
-
-    // <DefaultTriangle>
-    glGenVertexArrays(1, &DefaultTriangleVAO);
-    glBindVertexArray(DefaultTriangleVAO);
-
-    u32 triangleVBO;
-    glGenBuffers(1, &triangleVBO);
-    glBindBuffer(GL_ARRAY_BUFFER, triangleVBO);
-
-    // learnopengl p. 29:
-    // The fourth parameter specifies how we want the graphics card to manage the given data:
-    // - GL_STREAM_DRAW: the data is set only once and used by the GPU at most a few times.
-    // - GL_STATIC_DRAW: the data is set only once and used many times.
-    // - GL_DYNAMIC_DRAW: the data is changed a lot and used many times.
-    glBufferData(GL_ARRAY_BUFFER, sizeof(TriangleVertices), TriangleVertices, GL_STATIC_DRAW);
-
-    // learnopengl p. 34:
-    //  - The first parameter specifies which vertex attribute we want to configure. Remember that
-    //  we specified the location of the position vertex attribute in the vertex shader with layout
-    //  (location = 0).
-    //  - The next argument specifies the size of the vertex attribute. The vertex attribute is a
-    //  vec3 so it is composed of 3 values.
-    //  - The third argument specifies the type of the data which is GL_FLOAT (a vec* in GLSL
-    //  consists of floating point values).
-    //  - The next argument specifies if we want the data to be normalized. If we’re inputting
-    //  integer data types (int, byte) and we’ve set this to GL_TRUE, the integer data is normalized
-    //  to 0 (or-1 for signed data) and 1 when converted to float. This is not relevant for us so
-    //  we’ll leave this at GL_FALSE.
-    //  - The fifth argument is known as the stride and tells us the space between consecutive
-    //  vertex attributes. Since the next set of position data is located exactly 3 times the size
-    //  of a float away we specify that value as the stride. Note that since we know that the array
-    //  is tightly packed (there is no space between the next vertex attribute value) we could’ve
-    //  also specified the stride as 0 to let OpenGL determine the stride (this only works when
-    //  values are tightly packed). Whenever we have more vertex attributes we have to carefully
-    //  define the spacing between each vertex attribute but we’ll get to see more examples of that
-    //  later on.
-    //  - The last parameter is of type void* and thus requires that weird cast. This is the offset
-    //  of where the position data begins in the buffer. Since the position data is at the start of
-    //  the data array this value is just 0.
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(f32), (void *)0);
-
-    // Enable the vertex attribute with glEnableVertexAttribArray giving the vertex attribute
-    // location as its argument; vertex attributes are disabled by default.
-    glEnableVertexAttribArray(0);
-    glBindVertexArray(0);
-    // </DefaultTriangle>
-
-    // <DefaultRect>
-    glGenVertexArrays(1, &DefaultRectangleVAO);
-    glBindVertexArray(DefaultRectangleVAO);
-
-    u32 RectVBO;
-    glGenBuffers(1, &RectVBO);
-    glBindBuffer(GL_ARRAY_BUFFER, RectVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(RectVertices), RectVertices, GL_STATIC_DRAW);
-
-    u32 RectEBO;
-    glGenBuffers(1, &RectEBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, RectEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(RectIndices), RectIndices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(f32), (void *)0);
-    glEnableVertexAttribArray(0);
-
-    glBindVertexArray(0);
-    // </DefaultRect>
+    DefaultShader = InitShader(0, 0);
 
     glViewport(0, 0, WindowSize.x, WindowSize.y);
 
@@ -713,7 +495,9 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     Win32InitOpenGL(Win32Screen.window);
     Win32Sound = Win32InitSound();
 
-    SoundTone test = Win32PlayTestTone(&Win32Sound);
+    // SoundTone test = Win32PlayTestTone(&Win32Sound);
+    Objects[ObjCount++] = InitObject3D(DefaultShader, RectVertices, sizeof(RectVertices),
+                                       RectIndices, sizeof(RectIndices));
 
     Win32Memory = {
         .permStoreSize    = MB(64),
