@@ -422,9 +422,11 @@ internal DWORD Win32GetRefreshRate(HWND window) {
     return dm.dmDisplayFrequency;
 }
 
+global_variable v2i WindowSize = {800, 600};
+
 internal Win32ScreenBuffer Win32InitWindow(HINSTANCE instance) {
     Win32ScreenBuffer screen = {};
-    Win32ResizeDIBSection(&screen, 960, 540);
+    Win32ResizeDIBSection(&screen, WindowSize.x, WindowSize.y);
 
     WNDCLASSA windowClass = {
         .style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
@@ -441,7 +443,7 @@ internal Win32ScreenBuffer Win32InitWindow(HINSTANCE instance) {
 
     screen.window = CreateWindowExA(0, windowClass.lpszClassName, "Handmade Hero",
                                     WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
-                                    CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0);
+                                    WindowSize.x, WindowSize.y, 0, 0, instance, 0);
     if (!screen.window) {
         OutputDebugStringA("[ERROR] Couldn't create window");
         return {};
@@ -483,6 +485,25 @@ struct Win32TimingBuffer {
 };
 global_variable Win32TimingBuffer Win32Timing;
 
+global_variable const f32 TriangleVertices[] = {-0.5f, -0.5f, 0.0f, 0.5f, -0.5f,
+                                                0.0f,  0.0f,  0.5f, 0.0f};
+
+global_variable const f32 RectVertices[] = {
+    0.5f,  0.5f,  0.0f,  // top right
+    0.5f,  -0.5f, 0.0f,  // bottom right
+    -0.5f, -0.5f, 0.0f,  // bottom left
+    -0.5f, 0.5f,  0.0f   // top left
+};
+global_variable const u32 RectIndices[] = {
+    // note that we start from 0!
+    0, 1, 3,  // first triangle
+    1, 2, 3   // second triangle
+};
+
+global_variable u32 DefaultRectangleVAO;
+global_variable u32 DefaultTriangleVAO;
+global_variable u32 DefaultShader;
+
 internal void Win32TimeAndRender(Win32TimingBuffer *state) {
     u64 endCycleCount      = __rdtsc();
     u64 cyclesElapsed      = endCycleCount - state->lastCycleCount;
@@ -498,10 +519,22 @@ internal void Win32TimeAndRender(Win32TimingBuffer *state) {
     f64 fps = f64(Win32Screen.perfCountFrequency) / f64(Win32GetWallClock() - state->lastCounter);
 
     // <Render>
-    glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
+    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+
+    glUseProgram(DefaultShader);
+
+    glBindVertexArray(DefaultRectangleVAO);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+
+    glBindVertexArray(DefaultTriangleVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+
     SwapBuffers(Win32Screen.deviceContext);
-    ReleaseDC(Win32Screen.window, Win32Screen.deviceContext);  // TODO(violeta): Para qué es esto?
+
+    ReleaseDC(Win32Screen.window, Win32Screen.deviceContext);  // TODO(violeta): Hace falta?
     // </Render>
 
     char debugBuf[128];
@@ -549,6 +582,127 @@ internal void Win32InitOpenGL(HWND window) {
 
     if (!wglMakeCurrent(windowDC, openGLRC)) UNREACHABLE;
     if (!gladLoadGLLoader((GLADloadproc)Win32GetGLProcAddress)) UNREACHABLE;
+
+    // <DefaultShader>
+    const char *defaultVertShader =
+        "#version 460 core\n"
+        "layout (location = 0) in vec3 aPos;\n"
+        "void main()\n"
+        "{\n"
+        " gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
+        "}\0";
+
+    const char *defaultFragShader =
+        "#version 460 core\n"
+        "out vec4 FragColor;\n"
+        "void main()\n"
+        "{\n"
+        "FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n"
+        "}\0";
+
+    u32 vertShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertShader, 1, &defaultVertShader, NULL);
+    glCompileShader(vertShader);
+
+    i32 ok;
+    glGetShaderiv(vertShader, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char infoLog[512];
+        glGetShaderInfoLog(vertShader, 512, NULL, infoLog);
+        char buf[512];
+        WIN32_CHECK(StringCbPrintfA(buf, sizeof(buf), "[SHADER ERROR] %s\n", infoLog));
+        OutputDebugStringA(buf);
+    }
+
+    u32 fragShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragShader, 1, &defaultFragShader, NULL);
+    glCompileShader(fragShader);
+
+    DefaultShader = glCreateProgram();
+    glAttachShader(DefaultShader, vertShader);
+    glAttachShader(DefaultShader, fragShader);
+    glLinkProgram(DefaultShader);
+
+    glGetProgramiv(DefaultShader, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char infoLog[512];
+        glGetProgramInfoLog(DefaultShader, 512, NULL, infoLog);
+        char buf[512];
+        WIN32_CHECK(StringCbPrintfA(buf, sizeof(buf), "[SHADER ERROR] %s\n", infoLog));
+        OutputDebugStringA(buf);
+    }
+
+    glDeleteShader(vertShader);
+    glDeleteShader(fragShader);
+    // </DefaultShader>
+
+    // <DefaultTriangle>
+    glGenVertexArrays(1, &DefaultTriangleVAO);
+    glBindVertexArray(DefaultTriangleVAO);
+
+    u32 triangleVBO;
+    glGenBuffers(1, &triangleVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, triangleVBO);
+
+    // learnopengl p. 29:
+    // The fourth parameter specifies how we want the graphics card to manage the given data:
+    // - GL_STREAM_DRAW: the data is set only once and used by the GPU at most a few times.
+    // - GL_STATIC_DRAW: the data is set only once and used many times.
+    // - GL_DYNAMIC_DRAW: the data is changed a lot and used many times.
+    glBufferData(GL_ARRAY_BUFFER, sizeof(TriangleVertices), TriangleVertices, GL_STATIC_DRAW);
+
+    // learnopengl p. 34:
+    //  - The first parameter specifies which vertex attribute we want to configure. Remember that
+    //  we specified the location of the position vertex attribute in the vertex shader with layout
+    //  (location = 0).
+    //  - The next argument specifies the size of the vertex attribute. The vertex attribute is a
+    //  vec3 so it is composed of 3 values.
+    //  - The third argument specifies the type of the data which is GL_FLOAT (a vec* in GLSL
+    //  consists of floating point values).
+    //  - The next argument specifies if we want the data to be normalized. If we’re inputting
+    //  integer data types (int, byte) and we’ve set this to GL_TRUE, the integer data is normalized
+    //  to 0 (or-1 for signed data) and 1 when converted to float. This is not relevant for us so
+    //  we’ll leave this at GL_FALSE.
+    //  - The fifth argument is known as the stride and tells us the space between consecutive
+    //  vertex attributes. Since the next set of position data is located exactly 3 times the size
+    //  of a float away we specify that value as the stride. Note that since we know that the array
+    //  is tightly packed (there is no space between the next vertex attribute value) we could’ve
+    //  also specified the stride as 0 to let OpenGL determine the stride (this only works when
+    //  values are tightly packed). Whenever we have more vertex attributes we have to carefully
+    //  define the spacing between each vertex attribute but we’ll get to see more examples of that
+    //  later on.
+    //  - The last parameter is of type void* and thus requires that weird cast. This is the offset
+    //  of where the position data begins in the buffer. Since the position data is at the start of
+    //  the data array this value is just 0.
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(f32), (void *)0);
+
+    // Enable the vertex attribute with glEnableVertexAttribArray giving the vertex attribute
+    // location as its argument; vertex attributes are disabled by default.
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
+    // </DefaultTriangle>
+
+    // <DefaultRect>
+    glGenVertexArrays(1, &DefaultRectangleVAO);
+    glBindVertexArray(DefaultRectangleVAO);
+
+    u32 RectVBO;
+    glGenBuffers(1, &RectVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, RectVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(RectVertices), RectVertices, GL_STATIC_DRAW);
+
+    u32 RectEBO;
+    glGenBuffers(1, &RectEBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, RectEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(RectIndices), RectIndices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(f32), (void *)0);
+    glEnableVertexAttribArray(0);
+
+    glBindVertexArray(0);
+    // </DefaultRect>
+
+    glViewport(0, 0, WindowSize.x, WindowSize.y);
 
     ReleaseDC(window, windowDC);
 }
