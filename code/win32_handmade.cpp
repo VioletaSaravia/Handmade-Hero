@@ -3,7 +3,6 @@
 #include <xaudio2.h>
 #include <Xinput.h>
 
-#include "glad.c"
 #include "glad/glad.h"
 #include "handmade.h"
 
@@ -160,10 +159,6 @@ internal Win32SoundBuffer Win32InitSound() {
     sound.sampleRate = 44100;
     sound.bitRate    = 16;
 
-    // <Test Sine>
-
-    // </Test Sine>
-
     return sound;
 }
 
@@ -181,7 +176,7 @@ struct SoundTone {
 
 internal SoundTone Win32PlayTestTone(const Win32SoundBuffer *buf) {
     SoundTone sound = {.cyclesPerSec       = 220,
-                       .samplesPerCycle    = f32(buf->sampleRate / 220.0),
+                       .samplesPerCycle    = f32(buf->sampleRate / 220),
                        .bufferSizeInCycles = 10};
 
     sound.sampleCount = sound.samplesPerCycle * sound.bufferSizeInCycles;
@@ -519,6 +514,18 @@ internal void Win32TimeAndRender(Win32TimingBuffer *state) {
     state->lastCycleCount = endCycleCount;
 }
 
+void *Win32GetGLProcAddress(const char *name) {
+    void *p = (void *)wglGetProcAddress(name);
+
+    if (p == 0 || (p == (void *)0x1) || (p == (void *)0x2) || (p == (void *)0x3) ||
+        (p == (void *)-1)) {
+        HMODULE module = LoadLibraryA("opengl32.dll");
+        p              = (void *)GetProcAddress(module, name);
+    }
+
+    return p;
+}
+
 internal void Win32InitOpenGL(HWND window) {
     PIXELFORMATDESCRIPTOR desiredPixelFormat = {
         .nSize      = sizeof(PIXELFORMATDESCRIPTOR),
@@ -541,6 +548,7 @@ internal void Win32InitOpenGL(HWND window) {
     HGLRC openGLRC = wglCreateContext(windowDC);
 
     if (!wglMakeCurrent(windowDC, openGLRC)) UNREACHABLE;
+    if (!gladLoadGLLoader((GLADloadproc)Win32GetGLProcAddress)) UNREACHABLE;
 
     ReleaseDC(window, windowDC);
 }
@@ -550,6 +558,8 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     Win32Screen        = Win32InitWindow(instance);
     Win32InitOpenGL(Win32Screen.window);
     Win32Sound = Win32InitSound();
+
+    SoundTone test = Win32PlayTestTone(&Win32Sound);
 
     Win32Memory = {
         .permStoreSize    = MB(64),
@@ -567,8 +577,6 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         .lastCycleCount     = __rdtsc(),
         .delta              = Win32Timing.targetSPF,
     };
-
-    SoundTone test = Win32PlayTestTone(&Win32Sound);
 
     while (Running) {
         Win32ProcessKeyboard(&Win32Input);
