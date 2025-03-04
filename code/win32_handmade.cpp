@@ -1,28 +1,248 @@
 #include "win32_handmade.h"
 
-/*  PLATFORM LAYER LIST (INCOMPLETE):
+// <handmade_impl>
+void *PlatformReadEntireFile(const char *filename) {
+    HANDLE handle =
+        CreateFileA(filename, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, 0);
+    Assert(handle != INVALID_HANDLE_VALUE);
 
-    - [ ] Savegame locations
-    - [ ] getting handle to executable file
-    - [ ] asset loading path
-    - [ ] threading
-    - [ ] raw input (multiple keyb support?)
-    - [ ] sleep/timebegin period
-    - [ ] ClipCursor() (for multi monitor)
-    - [ ] fullscreen support
-    - [ ] WM_SETCURSOR (cursor visibility)
-    - [ ] QueryCancelAutoplay()
-    - [ ] WM_ACTIVATEAPP (for when app is not active)
-    - [ ] blit speed improvements (bitblt)
-    - [ ] hardware acceleration (opengl/d3d/vulkan/etc.)
-    - [ ] GetKeyboardLayout()
-*/
+    LARGE_INTEGER size     = {};
+    LARGE_INTEGER sizeRead = {};
 
-struct Win32GameCode {
-    HMODULE     dll;
-    GameInit   *Init;
-    GameUpdate *Update;
+    bool ok = GetFileSizeEx(handle, &size);
+    Assert(ok);
+    Assert(size.HighPart == 0);  // 4GB+ reads not supported >:(
+
+    void *result = VirtualAlloc(0, size.LowPart, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+    ok = ReadFile(handle, result, size.LowPart, &sizeRead.LowPart, 0);
+    Assert(ok);
+
+    CloseHandle(handle);
+
+    Assert(sizeRead.QuadPart == size.QuadPart);
+
+    return result;
 };
+
+// TODO(violeta): Untested
+bool PlatformWriteEntireFile(char *filename, u32 size, void *memory) {
+    HANDLE handle =
+        CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+
+    if (handle == INVALID_HANDLE_VALUE) {
+        WIN32_LOG("Error open file for writing");
+        return false;
+    }
+
+    DWORD sizeWritten = 0;
+
+    bool ok = WriteFile(handle, memory, size, &sizeWritten, 0);
+
+    CloseHandle(handle);
+
+    if (!ok || sizeWritten != size) {
+        WIN32_LOG("Error writing file");
+        return false;
+    }
+
+    return true;
+};
+
+void PlatformFreeFileMemory(void *memory) { VirtualFree(memory, 0, MEM_RELEASE); };
+
+Texture LoadTexture(const char *path) {
+    Texture result = {};
+
+    stbi_set_flip_vertically_on_load(true);
+    u8 *imageData = stbi_load(path, &result.width, &result.height, &result.nChannels, 0);
+    if (!imageData) {
+        // TODO(violeta): log
+        return {};
+    }
+
+    glGenTextures(1, &result.id);
+    glBindTexture(GL_TEXTURE_2D, result.id);
+
+    // set the texture wrapping/filtering options (on currently bound texture)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    // - The first argument specifies the texture target; setting this to GL_TEXTURE_2D means this
+    // operation will generate a texture on the currently bound texture object at the same target
+    // (so any textures bound to targets GL_TEXTURE_1D or GL_TEXTURE_3D will not be affected).
+    // - The second argument specifies the mipmap level for which we want to create a texture for if
+    // you want to set each mipmap level manually, but we’ll leave it at the base level which is 0.
+    // - The third argument tells OpenGL in what kind of format we want to store the texture. Our
+    // image has only RGB values so we’ll store the texture with RGB values as well.
+    // - The 4th and 5th argument sets the width and height of the resulting texture. We stored
+    // those earlier when loading the image so we’ll use the corresponding variables.
+    // - The next argument should always be 0 (some legacy stuff).
+    // - The 7th and 8th argument specify the format and datatype of the source image. We loaded the
+    // image with RGB values and stored them as chars (bytes) so we’ll pass in the corresponding
+    // values.
+    // - The last argument is the actual image data.
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, result.width, result.height, 0, GL_RGB, GL_UNSIGNED_BYTE,
+                 imageData);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    stbi_image_free(imageData);
+    return result;
+}
+
+global const f32 TestRectVertices[] = {
+    // positions        // colors         // uv coords
+    1.0f,  1.0f,  0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f,  // top right
+    1.0f,  -1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f,  // bottom right
+    -1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,  // bottom left
+    -1.0f, 1.0f,  0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f   // top left
+};
+
+global const u32 TestRectIndices[] = {
+    0, 1, 3,  // first triangle
+    1, 2, 3   // second triangle
+};
+
+void ShaderSetInt(Shader shader, const char *name, i32 value) {
+    glUniform1i(glGetUniformLocation(shader.ID, name), value);
+}
+void ShaderSetFloat(Shader shader, const char *name, f32 value) {
+    glUniform1f(glGetUniformLocation(shader.ID, name), value);
+}
+void ShaderSetFloat2(Shader shader, const char *name, v2 value) {
+    glUniform2f(glGetUniformLocation(shader.ID, name), value.x, value.y);
+}
+
+Shader InitShader(const char *vertFile, const char *fragFile) {
+    const char *vertSource =
+        (const char *)PlatformReadEntireFile(vertFile ? vertFile : "../shaders/default.vert");
+    const char *fragSource =
+        (const char *)PlatformReadEntireFile(fragFile ? fragFile : "../shaders/default.frag");
+
+    u32 vertShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertShader, 1, &vertSource, 0);
+    glCompileShader(vertShader);
+
+    i32 ok;
+    glGetShaderiv(vertShader, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char infoLog[512];
+        glGetShaderInfoLog(vertShader, 512, 0, infoLog);
+        char buf[512];
+        WIN32_CHECK(StringCbPrintfA(buf, sizeof(buf), "[SHADER ERROR] %s\n", infoLog));
+        OutputDebugStringA(buf);
+    }
+
+    u32 fragShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragShader, 1, &fragSource, 0);
+    glCompileShader(fragShader);
+
+    Shader result = {.ID = glCreateProgram()};
+    glAttachShader(result.ID, vertShader);
+    glAttachShader(result.ID, fragShader);
+    glLinkProgram(result.ID);
+
+    glGetProgramiv(result.ID, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char infoLog[512];
+        glGetProgramInfoLog(result.ID, 512, 0, infoLog);
+        char buf[512];
+        WIN32_CHECK(StringCbPrintfA(buf, sizeof(buf), "[SHADER ERROR] %s\n", infoLog));
+        OutputDebugStringA(buf);
+    }
+
+    glDeleteShader(vertShader);
+    glDeleteShader(fragShader);
+    PlatformFreeFileMemory((void *)vertSource);
+    PlatformFreeFileMemory((void *)fragSource);
+
+    return result;
+}
+
+// TODO(violeta): Objects are assumed to have vertex paint and indeces. Is any other case necessary?
+Object InitObject(Texture texture, Shader shader, const f32 *vertices, u32 vSize,
+                  const u32 *indices, u32 iSize) {
+    Object result = {.shader = shader, .texture = texture};
+    glGenVertexArrays(1, &result.VAO);
+    glBindVertexArray(result.VAO);
+
+    u32 vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+
+    // learnopengl p. 29:
+    // The fourth parameter specifies how we want the graphics card to manage the given data:
+    // - GL_STREAM_DRAW: the data is set only once and used by the GPU at most a few times.
+    // - GL_STATIC_DRAW: the data is set only once and used many times.
+    // - GL_DYNAMIC_DRAW: the data is changed a lot and used many times.
+    glBufferData(GL_ARRAY_BUFFER, vSize, vertices, GL_STATIC_DRAW);
+
+    u32 ebo;
+    glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, iSize, indices, GL_STATIC_DRAW);
+
+    // learnopengl p. 34:
+    //  - The first parameter specifies which vertex attribute we want to configure. Remember that
+    //  we specified the location of the position vertex attribute in the vertex shader with layout
+    //  (location = 0).
+    //  - The next argument specifies the size of the vertex attribute. The vertex attribute is a
+    //  vec3 so it is composed of 3 values.
+    //  - The third argument specifies the type of the data which is GL_FLOAT (a vec* in GLSL
+    //  consists of floating point values).
+    //  - The next argument specifies if we want the data to be normalized. If we’re inputting
+    //  integer data types (int, byte) and we’ve set this to GL_TRUE, the integer data is normalized
+    //  to 0 (or-1 for signed data) and 1 when converted to float. This is not relevant for us so
+    //  we’ll leave this at GL_FALSE.
+    //  - The fifth argument is known as the stride and tells us the space between consecutive
+    //  vertex attributes. Since the next set of position data is located exactly 3 times the size
+    //  of a float away we specify that value as the stride. Note that since we know that the array
+    //  is tightly packed (there is no space between the next vertex attribute value) we could’ve
+    //  also specified the stride as 0 to let OpenGL determine the stride (this only works when
+    //  values are tightly packed). Whenever we have more vertex attributes we have to carefully
+    //  define the spacing between each vertex attribute but we’ll get to see more examples of that
+    //  later on.
+    //  - The last parameter is of type void* and thus requires that weird cast. This is the offset
+    //  of where the position data begins in the buffer. Since the position data is at the start of
+    //  the data array this value is just 0.
+
+    u32 stride = 8 * sizeof(f32);
+    // position
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void *)0);
+    glEnableVertexAttribArray(0);
+    // color
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void *)(3 * sizeof(f32)));
+    glEnableVertexAttribArray(1);
+
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void *)(6 * sizeof(f32)));
+    glEnableVertexAttribArray(2);
+
+    // Enable the vertex attribute with glEnableVertexAttribArray giving the vertex attribute
+    // location as its argument; vertex attributes are disabled by default.
+    glBindVertexArray(0);
+
+    return result;
+}
+
+void DrawObject3D(Object obj) {
+    glUseProgram(obj.shader.ID);
+
+    glActiveTexture(GL_TEXTURE0);  // Only necessary in some architectures, or if there's more than
+                                   // one sample2D texture in the shader.
+
+    glBindTexture(GL_TEXTURE_2D, obj.texture.id);
+    glBindVertexArray(obj.VAO);
+
+    ShaderSetFloat(obj.shader, "time", 0);
+    ShaderSetFloat(obj.shader, "delta", 0);
+    ShaderSetFloat2(obj.shader, "resolution", WindowSize);
+
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+}
+// </handmade_impl>
 
 internal Win32GameCode Win32LoadGame() {
     Win32GameCode result = {};
@@ -48,29 +268,6 @@ internal void Win32UnloadGame(Win32GameCode *game) {
     game->Update = GameUpdateStub;
 }
 
-struct Win32ScreenBuffer : ScreenBuffer {
-    HWND       window;
-    HDC        deviceContext;
-    DWORD      refreshRate;
-    i64        perfCountFrequency;
-    BITMAPINFO Info;
-};
-global Win32ScreenBuffer Win32Screen;
-
-struct Win32InputBuffer : InputBuffer {};
-global Win32InputBuffer Win32Input;
-
-global Memory Win32Memory;
-
-global bool Running = true;
-
-struct Win32SoundBuffer : SoundBuffer {
-    IXAudio2               *xAudio2;
-    IXAudio2MasteringVoice *xAudio2MasteringVoice;
-    IXAudio2SourceVoice    *xAudio2TestSourceVoice;
-};
-global Win32SoundBuffer Win32Sound;
-
 internal Win32SoundBuffer Win32InitSound() {
     Win32SoundBuffer sound = {};
     WIN32_CHECK(CoInitializeEx(0, COINIT_MULTITHREADED));
@@ -83,18 +280,6 @@ internal Win32SoundBuffer Win32InitSound() {
 
     return sound;
 }
-
-struct SoundTone {
-    u8 *buf;
-    u32 byteCount;
-    u32 sampleCount;
-
-    u32 cyclesPerSec;
-    f32 samplesPerCycle;
-    u16 bufferSizeInCycles;
-
-    IXAudio2SourceVoice *xAudio2Voice;
-};
 
 internal SoundTone Win32PlayTestTone(const Win32SoundBuffer *buf) {
     SoundTone sound = {.cyclesPerSec       = 220,
@@ -148,7 +333,6 @@ internal v2i GetWindowDimension(HWND window) {
     return {{clientRect.right - clientRect.left, clientRect.bottom - clientRect.top}};
 }
 
-// DIB = Device-independent bitmap
 internal void Win32ResizeDIBSection(Win32ScreenBuffer *buffer, int width, int height) {
     if (buffer->Memory) {
         VirtualFree(buffer->Memory, 0, MEM_RELEASE);
@@ -176,15 +360,6 @@ internal void Win32ResizeDIBSection(Win32ScreenBuffer *buffer, int width, int he
     buffer->Memory = (u8 *)VirtualAlloc(0, bitmapSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 }
 
-internal void Win32DisplayBuffer(Win32ScreenBuffer buffer, HDC deviceContext, int windowWidth,
-                                 int windowHeight) {
-    // TODO(violeta): Aspect ratio correction and stretch modes
-    if (!StretchDIBits(deviceContext, 0, 0, windowWidth, windowHeight, 0, 0, buffer.Width,
-                       buffer.Height, buffer.Memory, &buffer.Info, DIB_RGB_COLORS, SRCCOPY)) {
-        WIN32_LOG("Error displaying buffer");
-    };
-}
-
 LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     LRESULT result = 0;
 
@@ -204,9 +379,6 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND window, UINT message, WPARAM wPara
         case WM_PAINT: {
             PAINTSTRUCT paint;
             HDC         deviceContext = BeginPaint(window, &paint);
-
-            // auto dim = GetWindowDimension(window);
-            // Win32DisplayBuffer(Win32Screen, deviceContext, dim.width, dim.height);
 
             EndPaint(window, &paint);
         } break;
@@ -344,11 +516,9 @@ internal DWORD Win32GetRefreshRate(HWND window) {
     return dm.dmDisplayFrequency;
 }
 
-global v2i WindowSize = {800, 600};
-
 internal Win32ScreenBuffer Win32InitWindow(HINSTANCE instance) {
     Win32ScreenBuffer screen = {};
-    Win32ResizeDIBSection(&screen, WindowSize.x, WindowSize.y);
+    Win32ResizeDIBSection(&screen, i32(WindowSize.x), i32(WindowSize.y));
 
     WNDCLASSA windowClass = {
         .style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
@@ -365,7 +535,7 @@ internal Win32ScreenBuffer Win32InitWindow(HINSTANCE instance) {
 
     screen.window = CreateWindowExA(0, windowClass.lpszClassName, "Handmade Hero",
                                     WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
-                                    WindowSize.x, WindowSize.y, 0, 0, instance, 0);
+                                    i32(WindowSize.x), i32(WindowSize.y), 0, 0, instance, 0);
     if (!screen.window) {
         OutputDebugStringA("[ERROR] Couldn't create window");
         return {};
@@ -394,18 +564,6 @@ internal i64 Win32InitPerformanceCounter(i64 *freq) {
 internal f64 Win32GetSecondsElapsed(i64 start, i64 end) {
     return f64(end - start) / f64(Win32Screen.perfCountFrequency);
 }
-
-struct Win32TimingBuffer {
-    // Used by Sleep()
-    u32  desiredSchedulerMs;
-    bool granularSleepOn;
-
-    f64 targetSPF;
-    i64 lastCounter;
-    u64 lastCycleCount;
-    f64 delta;
-};
-global Win32TimingBuffer Win32Timing;
 
 internal void Win32TimeAndRender(Win32TimingBuffer *state) {
     u64 endCycleCount      = __rdtsc();
@@ -496,8 +654,9 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
     Win32Sound = Win32InitSound();
 
     // SoundTone test = Win32PlayTestTone(&Win32Sound);
-    Objects[ObjCount++] = InitObject3D(DefaultShader, RectVertices, sizeof(RectVertices),
-                                       RectIndices, sizeof(RectIndices));
+    Objects[ObjCount++] =
+        InitObject(LoadTexture("../data/container.jpg"), DefaultShader, TestRectVertices,
+                   sizeof(TestRectVertices), TestRectIndices, sizeof(TestRectIndices));
 
     Win32Memory = {
         .permStoreSize    = MB(64),
@@ -521,6 +680,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
         Win32ProcessXInputControllers(&Win32Input);
 
         game.Update(Win32Timing.delta, &Win32Memory, &Win32Input, &Win32Screen, &Win32Sound);
+
         Win32TimeAndRender(&Win32Timing);
     }
 

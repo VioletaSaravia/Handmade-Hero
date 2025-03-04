@@ -59,6 +59,31 @@ union v2i {
     };
 };
 
+struct Shader {
+    u32 ID;
+};
+Shader InitShader(const char* vertFile, const char* fragFile);
+void   ShaderSetInt(Shader shader, const char* name, i32 value);
+void   ShaderSetFloat(Shader shader, const char* name, f32 value);
+void   ShaderSetFloat2(Shader shader, const char* name, v2 value);
+
+global Shader DefaultShader;
+
+struct Texture {
+    u32 id;
+    i32 width, height, nChannels;
+};
+Texture LoadTexture(const char* path);
+
+struct Object {
+    u32     VAO;
+    Shader  shader;
+    Texture texture;
+};
+Object InitObject(Texture texture, Shader shader, const f32* vertices, u32 vSize,
+                  const u32* indices, u32 iSize);
+void   DrawObject3D(Object obj);
+
 #ifdef HANDMADE_INTERNAL
 void* PlatformReadEntireFile(char* filename);
 void  PlatformFreeFileMemory(void* memory);
@@ -129,12 +154,6 @@ struct Memory {
     void* scratchStore;
 };
 
-struct GameState {
-    f64 delta;
-    f64 testPitch;
-    v2  pos[2];
-};
-
 struct SoundBuffer {
     u32 sampleRate;
     u32 bitRate;
@@ -155,3 +174,5 @@ extern "C" GAME_UPDATE(GameUpdateStub) {}
 #define GAME_INIT(name) void name(Memory* memory)
 typedef GAME_INIT(GameInit);
 extern "C" GAME_INIT(GameInitStub) {}
+
+global v2 WindowSize = {800, 600};
