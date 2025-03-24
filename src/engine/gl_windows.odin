@@ -3,7 +3,7 @@ package engine
 import win "core:sys/windows"
 import gl "vendor:OpenGL"
 
-InitOpenGL :: proc(window: win.HWND) -> (ok: bool) {
+InitOpenGL :: proc(window: win.HWND) -> (ok: bool = true) {
 	desired_pixel_format := win.PIXELFORMATDESCRIPTOR {
 		nSize      = size_of(win.PIXELFORMATDESCRIPTOR),
 		nVersion   = 1,
@@ -19,15 +19,17 @@ InitOpenGL :: proc(window: win.HWND) -> (ok: bool) {
 	win.SetPixelFormat(window_dc, suggested_pixel_format_index, &suggested_pixel_format)
 
 	opengl_rc := win.wglCreateContext(window_dc)
-	// gl.Viewport(0, 0, Settings.resolution.x, Settings.resolution.y)
+	win.wglMakeCurrent(window_dc, opengl_rc) or_return
+	gl.load_up_to(4, 6, win.gl_set_proc_address)
+
+	gl.Viewport(0, 0, 800, 600)
 	win.ReleaseDC(window, window_dc)
-	ok = true
 	return
 }
 
 Draw :: proc() {
-	// gl.ClearColor(0.2, 0.3, 0.3, 1.0)
-	// gl.Clear(gl.COLOR_BUFFER_BIT)
+	gl.ClearColor(0.2, 0.3, 0.3, 1.0)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
 }
 
 

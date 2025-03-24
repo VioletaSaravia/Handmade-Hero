@@ -2,6 +2,19 @@ package engine
 
 import win "core:sys/windows"
 
+// TODO
+Key :: enum u8 {
+	Ret      = 0x0D,
+	Shift    = 0x10,
+	Ctrl     = 0x11,
+	Esc      = 0x1B,
+	Space    = 0x20,
+	KeyLeft  = 0x25,
+	KeyUp    = 0x26,
+	KeyRight = 0x27,
+	KeyDown  = 0x28,
+}
+
 InputBuffer :: struct {
 	pads:     [CONTROLLER_COUNT]ControllerState,
 	keyboard: [KEY_COUNT]ButtonState,
