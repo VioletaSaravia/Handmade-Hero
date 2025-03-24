@@ -31,7 +31,7 @@ GameAPI :: struct {
 	// Procs
 	EngineInit:   proc(),
 	EngineUpdate: proc(),
-	SetProcs:     proc(init, update: proc()),
+	SetProcs:     proc(setup, init, update: proc()),
 	Setup:        proc(),
 	Init:         proc(),
 	Update:       proc(),
@@ -68,7 +68,7 @@ LoadAPI :: proc(api_version: i32) -> (api: GameAPI, ok: bool) {
 		fmt.printfln("Failed initializing symbols: {0}", dynlib.last_error())
 	}
 
-	api.SetProcs(api.Init, api.Update)
+	api.SetProcs(api.Setup, api.Init, api.Update)
 	api.version = api_version
 	api.mod_time = mod_time
 	ok = true

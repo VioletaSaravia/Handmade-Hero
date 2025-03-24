@@ -81,20 +81,24 @@ Timing: TimingBuffer
 
 
 GameProcs: struct {
+	Setup:  proc(),
 	Init:   proc(),
 	Update: proc(),
 }
 
 @(export)
-GameSetProcs :: proc(init, update: proc()) {
+GameSetProcs :: proc(setup, init, update: proc()) {
+	GameProcs.Setup = setup
 	GameProcs.Init = init
 	GameProcs.Update = update
 }
 
 @(export)
 GameEngineInit :: proc() {
+	GameProcs.Setup()
+
 	ok: bool
-	Memory = (InitMemory(64 * 1000 * 1000))
+	Memory = auto_cast (InitMemory(64 * 1000 * 1000))
 	if Memory == nil do return
 
 	Window, ok = InitWindow()

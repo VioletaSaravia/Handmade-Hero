@@ -1,6 +1,7 @@
 package engine
 
 import win "core:sys/windows"
+import uc "core:unicode/utf16"
 
 WindowBuffer :: struct {
 	memory:          [^]byte, // Remove?
@@ -76,7 +77,7 @@ GetWindowDim :: proc(window: win.HWND) -> [2]i32 {
 
 
 InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
-	ResizeDIBSection(&buffer, 800, 600)
+	ResizeDIBSection(&buffer, Settings.resolution.x, Settings.resolution.y)
 	instance := win.HINSTANCE(win.GetModuleHandleW(nil))
 
 	window_class := win.WNDCLASSW {
@@ -84,7 +85,7 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 		lpfnWndProc   = MainWindowCallback,
 		hInstance     = instance,
 		hIcon         = nil,
-		lpszClassName = win.L("test"),
+		lpszClassName = win.L("FUCKYOU"),
 	}
 
 	if win.RegisterClassW(&window_class) == 0 {
@@ -92,15 +93,16 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 		return
 	}
 
+
 	buffer.window = win.CreateWindowExW(
 		0,
 		window_class.lpszClassName,
-		win.L("test"),
+		win.L("FUCKYOU"),
 		win.WS_OVERLAPPEDWINDOW | win.WS_VISIBLE,
 		win.CW_USEDEFAULT,
 		win.CW_USEDEFAULT,
-		800,
-		600,
+		Settings.resolution.x,
+		Settings.resolution.y,
 		nil,
 		nil,
 		instance,

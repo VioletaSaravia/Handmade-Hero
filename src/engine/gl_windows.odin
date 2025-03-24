@@ -22,7 +22,7 @@ InitOpenGL :: proc(window: win.HWND) -> (ok: bool = true) {
 	win.wglMakeCurrent(window_dc, opengl_rc) or_return
 	gl.load_up_to(4, 6, win.gl_set_proc_address)
 
-	gl.Viewport(0, 0, 800, 600)
+	gl.Viewport(0, 0, Settings.resolution.x, Settings.resolution.y)
 	win.ReleaseDC(window, window_dc)
 	return
 }
