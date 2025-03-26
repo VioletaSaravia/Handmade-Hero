@@ -3,6 +3,79 @@ package engine
 import win "core:sys/windows"
 import uc "core:unicode/utf16"
 
+ReadEntireFile :: proc(filename: ^string) -> (result: rawptr, ok: bool) {
+	handle := win.CreateFileW(
+		auto_cast filename,
+		win.GENERIC_READ,
+		0,
+		nil,
+		win.OPEN_EXISTING,
+		win.FILE_ATTRIBUTE_READONLY,
+		win.HANDLE{},
+	)
+
+	if handle == win.INVALID_HANDLE_VALUE {
+		return nil, false
+	}
+
+	size: win.LARGE_INTEGER
+	size_read: win.LARGE_INTEGER
+
+	if ok = auto_cast win.GetFileSizeEx(handle, &size); !ok || size == 0 {
+		return nil, false
+	}
+
+	result = win.VirtualAlloc(
+		nil,
+		auto_cast size,
+		win.MEM_COMMIT | win.MEM_RESERVE,
+		win.PAGE_READWRITE,
+	)
+
+	// TODO(violeta): Este auto_cast está bien?
+	if ok = auto_cast win.ReadFile(handle, result, auto_cast size, auto_cast &size_read, nil);
+	   !ok {
+		return nil, ok
+	}
+
+	win.CloseHandle(handle)
+
+	return result, size == size_read
+}
+
+// TODO(violeta): No testeado
+WriteEntireFile :: proc(filename: ^string, size: u32, memory: rawptr) -> (ok: bool) {
+	handle := win.CreateFileW(
+		auto_cast filename,
+		win.GENERIC_WRITE,
+		0,
+		nil,
+		win.CREATE_ALWAYS,
+		win.FILE_ATTRIBUTE_NORMAL,
+		nil,
+	)
+	if handle == win.INVALID_HANDLE_VALUE {
+		// LOG
+		return false
+	}
+
+	size_written: win.DWORD
+	ok = auto_cast win.WriteFile(handle, memory, size, &size_written, nil)
+
+	win.CloseHandle(handle)
+
+	if !ok || size_written != size {
+		// LOG
+		return false
+	}
+	return
+}
+
+FreeFileMemory :: proc(memory: rawptr) -> bool {
+	return auto_cast win.VirtualFree(memory, 0, win.MEM_RELEASE)
+}
+
+
 WindowBuffer :: struct {
 	memory:          [^]byte, // Remove?
 	w, h:            i32,
@@ -14,6 +87,16 @@ WindowBuffer :: struct {
 	info:            win.BITMAPINFO,
 }
 
+Fullscreen :: proc(window: win.HWND) {
+	w := win.GetSystemMetrics(win.SM_CXSCREEN)
+	h := win.GetSystemMetrics(win.SM_CYSCREEN)
+
+	style := win.GetWindowLongW(window, win.GWL_STYLE)
+	win.SetWindowLongW(window, win.GWL_STYLE, style & ~i32(win.WS_OVERLAPPEDWINDOW))
+
+	win.SetMenu(window, nil)
+	win.SetWindowPos(window, win.HWND_TOPMOST, 0, 0, w, h, win.SWP_NOZORDER | win.SWP_FRAMECHANGED)
+}
 
 GetRefreshRate :: proc(window: win.HWND) -> u32 {
 	monitor := win.MonitorFromWindow(window, .MONITOR_DEFAULTTONEAREST)
@@ -22,7 +105,6 @@ GetRefreshRate :: proc(window: win.HWND) -> u32 {
 	}
 
 	win.GetMonitorInfoW(monitor, &monitor_info)
-
 	dm := win.DEVMODEW {
 		dmSize = size_of(win.DEVMODEW),
 	}
@@ -34,7 +116,6 @@ GetRefreshRate :: proc(window: win.HWND) -> u32 {
 
 ResizeDIBSection :: proc(buffer: ^WindowBuffer, width, height: i32) {
 	if buffer.memory != nil do win.VirtualFree(buffer.memory, 0, win.MEM_RELEASE)
-
 	buffer.w = width
 	buffer.h = height
 	buffer.bytes_per_pixel = 4
@@ -85,7 +166,7 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 		lpfnWndProc   = MainWindowCallback,
 		hInstance     = instance,
 		hIcon         = nil,
-		lpszClassName = win.L("FUCKYOU"),
+		lpszClassName = auto_cast raw_data(Settings.name),
 	}
 
 	if win.RegisterClassW(&window_class) == 0 {
@@ -93,11 +174,10 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 		return
 	}
 
-
 	buffer.window = win.CreateWindowExW(
 		0,
 		window_class.lpszClassName,
-		win.L("FUCKYOU"),
+		auto_cast raw_data(Settings.name),
 		win.WS_OVERLAPPEDWINDOW | win.WS_VISIBLE,
 		win.CW_USEDEFAULT,
 		win.CW_USEDEFAULT,
@@ -118,4 +198,14 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 	buffer.refresh_rate = GetRefreshRate(buffer.window)
 	ok = true
 	return
+}
+
+GetMouse :: proc() -> [2]i32 {
+	pt: win.POINT
+
+	if ok := win.GetCursorPos(&pt); !ok {
+		// LOG
+	}
+
+	return {pt.x, pt.y}
 }

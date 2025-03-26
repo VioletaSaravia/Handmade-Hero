@@ -6,7 +6,6 @@ AudioBuffer :: struct {
 	device: ma.device,
 }
 
-
 AudioDataCallback :: proc "c" (
 	device: ^ma.device,
 	output: rawptr,

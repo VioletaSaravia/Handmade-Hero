@@ -1,5 +1,6 @@
 package engine
 
+import "core:mem"
 
 BMPColor :: struct {
 	b, g, r, a: u8,
@@ -42,19 +43,22 @@ AseBMP32x32 :: struct {
 	line_data:      [1024]byte,
 }
 
-Image :: [][4]u8
+Image :: []u8
 
 LoadImage :: proc(path: string) -> (result: Image) {
 	return
 }
 
 ImageFromAseBMP32x32 :: proc(bmp: AseBMP32x32) -> (result: Image) {
-	data := [1024][4]u8{}
-	result = data[:]
+	// no
+	result = []u8{}
 
-	for i in bmp.line_data {
+	for i := 0; i < len(bmp.line_data); i += 4 {
 		color := bmp.rgbq[i]
-		result[i] = [4]u8{color.r, color.g, color.b, color.a}
+		result[i] = color.r
+		result[i + 1] = color.g
+		result[i + 2] = color.b
+		result[i + 3] = color.a
 	}
 
 	return

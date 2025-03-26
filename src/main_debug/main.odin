@@ -31,10 +31,11 @@ GameAPI :: struct {
 	// Procs
 	EngineInit:   proc(),
 	EngineUpdate: proc(),
-	SetProcs:     proc(setup, init, update: proc()),
+	Load:         proc(setup, init, update, draw: proc()),
 	Setup:        proc(),
 	Init:         proc(),
 	Update:       proc(),
+	Draw:         proc(),
 	ReloadMemory: proc(memory: rawptr),
 	IsRunning:    proc() -> bool,
 	GetMemory:    proc() -> rawptr,
@@ -58,17 +59,11 @@ LoadAPI :: proc(api_version: i32) -> (api: GameAPI, ok: bool) {
 	// game DLL. It actually looks for symbols starting with `game_`, which is
 	// why the argument `"game_"` is there.
 
-	if _, ok = dynlib.initialize_symbols(
-		&api,
-		game_dll_name,
-		"Game",
-		/* changed from game_ */
-		"lib",
-	); !ok {
+	if _, ok = dynlib.initialize_symbols(&api, game_dll_name, "Game", "lib"); !ok {
 		fmt.printfln("Failed initializing symbols: {0}", dynlib.last_error())
 	}
 
-	api.SetProcs(api.Setup, api.Init, api.Update)
+	api.Load(api.Setup, api.Init, api.Update, api.Draw)
 	api.version = api_version
 	api.mod_time = mod_time
 	ok = true
@@ -98,7 +93,7 @@ ResetTrackingAllocator :: proc(a: ^mem.Tracking_Allocator) -> (ok: bool = true) 
 	return
 }
 
-DebugMain :: proc() {
+main :: proc() {
 	exe_path := os.args[0]
 	exe_dir := filepath.dir(string(exe_path), context.temp_allocator)
 	if err := os.set_current_directory(exe_dir); err != nil {
@@ -112,21 +107,19 @@ DebugMain :: proc() {
 	mem.tracking_allocator_init(&tracking_allocator, default_allocator)
 	context.allocator = mem.tracking_allocator(&tracking_allocator)
 
-
 	api_version: i32 = 0
 	g, ok := LoadAPI(api_version)
 	if !ok {
 		fmt.println("Failed to load Game API")
 		return
 	}
-
 	api_version += 1
+
 	g.EngineInit()
 	old_apis := make([dynamic]GameAPI, default_allocator)
 
 	for g.IsRunning() {
 		g.EngineUpdate()
-
 		game_dll_mod, game_dll_mod_err := os.last_write_time_by_name(GAME_DLL_PATH)
 		if game_dll_mod_err != os.ERROR_NONE || g.mod_time == game_dll_mod do continue
 
@@ -148,17 +141,5 @@ DebugMain :: proc() {
 		if err := os.remove(fmt.aprintf("game_{0}.dll", i)); err != os.ERROR_NONE {
 			fmt.println("DLL not deleted.")
 		}
-	}
-}
-
-ReleaseMain :: proc() {
-
-}
-
-main :: proc() {
-	when ODIN_DEBUG {
-		DebugMain()
-	} else {
-		ReleaseMain()
 	}
 }

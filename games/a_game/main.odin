@@ -1,14 +1,8 @@
-package game
+package a_game
 
-import e "../engine"
+import e "../../src/engine"
 import fmt "core:fmt"
 import gl "vendor:OpenGL"
-
-State: ^GameState
-GameState :: struct {
-	player_pos:     e.v2,
-	default_shader: e.Shader,
-}
 
 @(export)
 GameSetup :: proc() {
@@ -16,18 +10,12 @@ GameSetup :: proc() {
 		name       = "Test",
 		version    = "0.1",
 		resolution = {800, 600},
-		fullscreen = false,
 		memory     = 64 * 1000 * 1000,
 	}
 }
 
 @(export)
-GameInit :: proc() {
-	State = auto_cast e.Alloc(size_of(GameState))
-
-	// TODO(violeta): Mover al engine
-	State.default_shader, _ = e.NewShader("", "")
-}
+GameInit :: proc() {}
 
 @(export)
 GameUpdate :: proc() {}
