@@ -13,33 +13,28 @@ GameState :: struct {
 
 @(export)
 GameSetup :: proc() {
-	e.Settings(
-		{
+	e.Settings({
 			name = "Test",
 			version = "0.1",
 			resolution = {800, 600},
 			fullscreen = false,
 			memory = size_of(GameState),
-		},
-	)
+		})
 }
 
 @(export)
 GameInit :: proc() {
-	s = auto_cast raw_data(e.Mem.GameMemory[:])
-
+	s = auto_cast e.GameGetMemory()
 }
 
 @(export)
 GameUpdate :: proc() {
-	s = auto_cast raw_data(e.Mem.GameMemory[:])
+	s = auto_cast e.GameGetMemory()
 }
 
 @(export)
 GameDraw :: proc() {
 	e.ClearScreen({0.4, 0.3, 0.3})
 
-
-	e.DrawRectangle({0, 0}, {1, 1}, {1, 1, 0, 1})
-	e.DrawRectangle({0, 0}, {0.5, 0.5}, {0.5, 0, 0.5, 0.5})
+	e.DrawRectangle({0, 0}, {300, 300}, {0, 1, 0, 1})
 }

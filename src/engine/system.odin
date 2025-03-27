@@ -3,6 +3,7 @@ package engine
 import "core:fmt"
 import win "core:sys/windows"
 import uc "core:unicode/utf16"
+import gl "vendor:OpenGL"
 
 ReadEntireFile :: proc(filename: ^string) -> (result: rawptr, ok: bool) {
 	handle := win.CreateFileW(
@@ -150,11 +151,34 @@ ResizeDIBSection :: proc(buffer: ^WindowBuffer, width, height: i32) {
 }
 
 
-GetWindowDim :: proc(window: win.HWND) -> [2]i32 {
+GetResolution :: proc() -> [2]i32 {
 	client_rect: win.RECT
-	win.GetClientRect(window, &client_rect)
+	win.GetClientRect(Mem.Window.window, &client_rect)
 
 	return {client_rect.right - client_rect.left, client_rect.bottom - client_rect.top}
+}
+
+ResizeWindow :: proc(hWnd: win.HWND, width, h: i32) {
+	height := h == 0 ? 1 : h // Prevent division by zero
+
+	rect := win.RECT{0, 0, width, height}
+	win.AdjustWindowRect(
+		&rect,
+		win.WS_OVERLAPPED | win.WS_CAPTION | win.WS_SYSMENU | win.WS_MINIMIZEBOX,
+		win.FALSE,
+	)
+	win.SetWindowPos(
+		hWnd,
+		nil,
+		0,
+		0,
+		rect.right - rect.left,
+		rect.bottom - rect.top,
+		win.SWP_NOMOVE | win.SWP_NOZORDER,
+	)
+
+	// win.wglMakeCurrent(hdc, hglrc)
+	gl.Viewport(0, 0, width, height)
 }
 
 
@@ -190,7 +214,7 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 		0,
 		window_class.lpszClassName,
 		auto_cast raw_data(Mem.Settings.name),
-		win.WS_OVERLAPPEDWINDOW | win.WS_VISIBLE,
+		win.WS_OVERLAPPED | win.WS_CAPTION | win.WS_SYSMENU | win.WS_MINIMIZEBOX | win.WS_VISIBLE,
 		win.CW_USEDEFAULT,
 		win.CW_USEDEFAULT,
 		width,

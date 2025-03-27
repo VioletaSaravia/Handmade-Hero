@@ -140,7 +140,7 @@ main :: proc() {
 		}
 	}
 
-	for i in 0 ..< api_version {
+	for i in 0 ..< 99 {
 		if err := os.remove(fmt.aprintf("game_{0}.dll", i)); err != os.ERROR_NONE {
 			fmt.println("DLL not deleted.")
 		}

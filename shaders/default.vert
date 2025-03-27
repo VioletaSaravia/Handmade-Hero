@@ -7,6 +7,8 @@ layout(location = 2) in vec2 aTexCoord;
 out vec3 vertColor;
 out vec2 texCoord;
 
+uniform ivec2 res;
+
 uniform vec2 pos;
 uniform vec2 size;
 
@@ -14,9 +16,12 @@ void main() {
     vertColor = aColor;
     texCoord = aTexCoord;
 
+    vec2 size_n = size / res;
+    vec2 pos_n = pos / res;
+
     gl_Position = vec4(
-            aPos.x * size.x + pos.x - (1 - size.x),
-            aPos.y * size.y + pos.y - (1 - size.y),
+            aPos.x * size_n.x + pos_n.x,
+            aPos.y * size_n.y + pos_n.y,
             aPos.z,
             1.0f
         );

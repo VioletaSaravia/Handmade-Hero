@@ -1,7 +1,8 @@
 package engine
 
-import win "core:sys/windows"
 import "core:fmt"
+import win "core:sys/windows"
+import gl "vendor:OpenGL"
 
 ButtonState :: enum u8 {
 	Released,
@@ -50,6 +51,18 @@ Key :: enum u8 {
 	KeyUp    = 0x26,
 	KeyRight = 0x27,
 	KeyDown  = 0x28,
+	F1       = 0x70,
+	F2       = 0x71,
+	F3       = 0x72,
+	F4       = 0x73,
+	F5       = 0x74,
+	F6       = 0x75,
+	F7       = 0x76,
+	F8       = 0x77,
+	F9       = 0x78,
+	F10      = 0x79,
+	F11      = 0x7A,
+	F12      = 0x7B,
 }
 
 MouseState :: struct {

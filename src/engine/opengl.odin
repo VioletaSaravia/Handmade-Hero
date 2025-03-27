@@ -138,6 +138,9 @@ ReloadShader :: proc(shader: ^Shader) -> os.Error {
 SetUniform1i :: proc(id: u32, name: string, value: i32) {
 	gl.Uniform1i(gl.GetUniformLocation(id, auto_cast raw_data(name)), value)
 }
+SetUniform2i :: proc(id: u32, name: string, value: [2]i32) {
+	gl.Uniform2i(gl.GetUniformLocation(id, auto_cast raw_data(name)), value.x, value.y)
+}
 SetUniform1f :: proc(id: u32, name: string, value: f32) {
 	gl.Uniform1f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value)
 }
@@ -159,6 +162,7 @@ SetUniform4fv :: proc(id: u32, name: string, value: [4]f32) {
 
 SetUniform :: proc {
 	SetUniform1i,
+	SetUniform2i,
 	SetUniform1f,
 	SetUniform2fv,
 	SetUniform3fv,
@@ -264,18 +268,18 @@ NewRectangle :: proc() -> (new: Rectangle) {
 	return
 }
 
-
+RectDrawQueue: [dynamic]RectToDraw
 RectToDraw :: struct {
 	pos, size: [2]f32,
 	color:     [4]f32,
 }
-RectDrawQueue: [dynamic]RectToDraw
 
 DrawRectangle :: proc(pos: [2]f32, size: [2]f32, color: [4]f32) {
 	UseShader(Mem.Shaders[0])
 	SetUniform(Mem.Shaders[0].id, "color", color)
 	SetUniform(Mem.Shaders[0].id, "pos", pos)
 	SetUniform(Mem.Shaders[0].id, "size", size)
+	SetUniform(Mem.Shaders[0].id, "res", GetResolution())
 
 	gl.BindVertexArray(Mem.DefaultRect.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)

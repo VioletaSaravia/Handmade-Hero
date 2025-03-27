@@ -141,6 +141,7 @@ Settings :: proc(settings: GameSettings) {
 	Mem.Settings = settings
 }
 
+
 @(export)
 GameEngineInit :: proc() {
 	GameProcs.Setup()
@@ -149,7 +150,6 @@ GameEngineInit :: proc() {
 	if Mem.Window, ok = InitWindow(); !ok do return
 	if ok = InitOpenGL(Mem.Window.window); !ok do return
 	Mem.DefaultRect = NewRectangle()
-
 	// if Audio^, ok = InitAudio(); !ok do return
 	Mem.Timing, Mem.Window.perf_count_freq = InitTiming(Mem.Window.refresh_rate)
 
