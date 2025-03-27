@@ -1,0 +1,27 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Debug Project",
+            "type": "shell",
+            "command": "${workspaceFolder}/build.bat",
+            "args": [""],
+            "problemMatcher": [],
+            "group": "build",
+            "presentation": {
+                "reveal": "silent"
+            }
+        },
+        {
+            "label": "Build Release Project",
+            "type": "shell",
+            "command": "${workspaceFolder}/build.bat",
+            "args": ["release"],
+            "problemMatcher": [],
+            "group": "build",
+            "presentation": {
+                "reveal": "silent"
+            }
+        }
+    ]
+}

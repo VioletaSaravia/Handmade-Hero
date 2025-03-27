@@ -2,37 +2,44 @@ package game
 
 import e "../engine"
 import fmt "core:fmt"
+import m "core:math"
 import gl "vendor:OpenGL"
 
-State: ^GameState
+s: ^GameState
 GameState :: struct {
-	player_pos:     e.v2,
-	default_shader: e.Shader,
+	player_pos:  e.v2,
+	default_tex: e.Rectangle,
 }
 
 @(export)
 GameSetup :: proc() {
-	e.Settings = {
-		name       = "Test",
-		version    = "0.1",
-		resolution = {800, 600},
-		fullscreen = false,
-		memory     = 64 * 1000 * 1000,
-	}
+	e.Settings(
+		{
+			name = "Test",
+			version = "0.1",
+			resolution = {800, 600},
+			fullscreen = false,
+			memory = size_of(GameState),
+		},
+	)
 }
 
 @(export)
 GameInit :: proc() {
-	State = auto_cast e.Alloc(size_of(GameState))
+	s = auto_cast raw_data(e.Mem.GameMemory[:])
 
-	// TODO(violeta): Mover al engine
-	State.default_shader, _ = e.NewShader("", "")
 }
 
 @(export)
-GameUpdate :: proc() {}
+GameUpdate :: proc() {
+	s = auto_cast raw_data(e.Mem.GameMemory[:])
+}
 
 @(export)
 GameDraw :: proc() {
 	e.ClearScreen({0.4, 0.3, 0.3})
+
+
+	e.DrawRectangle({0, 0}, {1, 1}, {1, 1, 0, 1})
+	e.DrawRectangle({0, 0}, {0.5, 0.5}, {0.5, 0, 0.5, 0.5})
 }

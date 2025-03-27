@@ -1,6 +1,11 @@
 package engine
 
 import "core:mem"
+import "core:os"
+import fp "core:path/filepath"
+
+WHITE :: [4]f32{1, 1, 1, 1}
+BLACK :: [4]f32{0, 0, 0, 1}
 
 BMPColor :: struct {
 	b, g, r, a: u8,
@@ -19,7 +24,7 @@ BMPCompression :: enum u32 {
 	CMYKRLE4,
 }
 
-AseBMP32x32 :: struct {
+AseBMP32x32 :: struct #packed {
 	// BMFH
 	bf_size:        u32,
 	bf_reserved1:   u16,
@@ -45,21 +50,22 @@ AseBMP32x32 :: struct {
 
 Image :: []u8
 
-LoadImage :: proc(path: string) -> (result: Image) {
-	return
-}
-
-ImageFromAseBMP32x32 :: proc(bmp: AseBMP32x32) -> (result: Image) {
-	// no
-	result = []u8{}
-
-	for i := 0; i < len(bmp.line_data); i += 4 {
-		color := bmp.rgbq[i]
-		result[i] = color.r
-		result[i + 1] = color.g
-		result[i + 2] = color.b
-		result[i + 3] = color.a
+LoadImage :: proc(path: string) -> (result: Image, ok: bool) {
+	switch fp.ext(path) {
+	case ".bmp":
+		data := transmute(^AseBMP32x32)raw_data(os.read_entire_file_from_filename(path) or_return)
+		result = make([]u8, 1024)
+		for i := 0; i < len(data.line_data); i += 4 {
+			color := data.rgbq[i]
+			// Backwards?
+			result[i] = color.r
+			result[i + 1] = color.g
+			result[i + 2] = color.b
+			result[i + 3] = color.a
+		}
+		return result, true
+	case:
 	}
 
-	return
+	return result, false
 }

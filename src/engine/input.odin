@@ -1,6 +1,7 @@
 package engine
 
 import win "core:sys/windows"
+import "core:fmt"
 
 ButtonState :: enum u8 {
 	Released,
@@ -67,21 +68,30 @@ MainWindowCallback :: proc "std" (
 	msg: u32,
 	w_param: win.WPARAM,
 	l_param: win.LPARAM,
-) -> win.LRESULT {
-	result: win.LRESULT = 0
-
+) -> (
+	result: win.LRESULT,
+) {
 	switch msg {
+	case win.WM_SETCURSOR:
+		if win.LOWORD(l_param) == win.HTCLIENT {
+			win.SetCursor(win.LoadCursorA(nil, win.IDC_ARROW))
+			result = 1
+		} else {
+			result = win.DefWindowProcA(window, msg, w_param, l_param)
+		}
+
 	case win.WM_SIZE:
 
 	case win.WM_DESTROY:
-		// LOG
-		Running^ = false
+		win.OutputDebugStringA("Window forcefully closed")
+		Mem.Running = false
+		win.PostQuitMessage(0)
 
 	case win.WM_CLOSE:
-		Running^ = false
+		Mem.Running = false
 
 	case win.WM_MOUSEWHEEL:
-		Input.mouse.wheel = auto_cast win.HIWORD(w_param)
+		Mem.Input.mouse.wheel = auto_cast win.HIWORD(w_param)
 
 	case win.WM_PAINT:
 		paint: win.PAINTSTRUCT
@@ -98,7 +108,7 @@ MainWindowCallback :: proc "std" (
 		result = win.DefWindowProcA(window, msg, w_param, l_param)
 	}
 
-	return result
+	return
 }
 
 ProcessKeyboard :: proc(buffer: ^InputBuffer) {
@@ -115,7 +125,7 @@ ProcessKeyboard :: proc(buffer: ^InputBuffer) {
 			    1,
 			    /* PM_REMOVE ? */
 		    )) {
-		if message.message == win.WM_QUIT do Running^ = false
+		if message.message == win.WM_QUIT do Mem.Running = false
 		win.TranslateMessage(&message)
 		win.DispatchMessageW(&message)
 	}

@@ -1,1 +1,0 @@
-odin build .\src\main_release -debug -out:build/win32/main.exe

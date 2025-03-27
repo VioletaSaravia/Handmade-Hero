@@ -2,17 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Release Launch",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/win32/main.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${fileDirname}",
-            "environment": [],
-        },
-        {
-            "name": "Hot Reload Launch",
+            "name": "Debug Compile and Launch",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/debug/main.exe",
@@ -20,6 +10,7 @@
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
+            "preLaunchTask": "Build Debug Project"
         }
     ]
 }

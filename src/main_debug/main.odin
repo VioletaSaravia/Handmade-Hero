@@ -137,8 +137,23 @@ main :: proc() {
 		}
 	}
 
+	if g.lib != nil {
+		if !dynlib.unload_library(g.lib) {
+			fmt.printfln("Failed unloading lib: {0}", dynlib.last_error())
+		}
+	}
+
+	for api in old_apis {
+		if !dynlib.unload_library(api.lib) {
+			fmt.printfln("Failed unloading lib: {0}", dynlib.last_error())
+		}
+	}
+
 	for i in 0 ..< api_version {
 		if err := os.remove(fmt.aprintf("game_{0}.dll", i)); err != os.ERROR_NONE {
+			fmt.println("DLL not deleted.")
+		}
+		if err := os.remove(fmt.aprintf("game_{0}.pdb", i)); err != os.ERROR_NONE {
 			fmt.println("DLL not deleted.")
 		}
 	}

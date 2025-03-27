@@ -1,5 +1,6 @@
 package engine
 
+import "core:fmt"
 import win "core:sys/windows"
 import uc "core:unicode/utf16"
 
@@ -158,31 +159,42 @@ GetWindowDim :: proc(window: win.HWND) -> [2]i32 {
 
 
 InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
-	ResizeDIBSection(&buffer, Settings.resolution.x, Settings.resolution.y)
+	rect := win.RECT{0, 0, Mem.Settings.resolution.x, Mem.Settings.resolution.y}
+	win.AdjustWindowRect(&rect, win.WS_OVERLAPPEDWINDOW, auto_cast false)
+	width := rect.right - rect.left
+	height := rect.bottom - rect.top
+
+	ResizeDIBSection(&buffer, width, height)
 	instance := win.HINSTANCE(win.GetModuleHandleW(nil))
 
 	window_class := win.WNDCLASSW {
 		style         = win.CS_HREDRAW | win.CS_VREDRAW | win.CS_OWNDC,
 		lpfnWndProc   = MainWindowCallback,
 		hInstance     = instance,
-		hIcon         = nil,
-		lpszClassName = auto_cast raw_data(Settings.name),
+		hIcon         = auto_cast win.LoadImageW(
+			instance,
+			win.L("../../data/icon.ico" when ODIN_DEBUG else "data/icon.ico"),
+			win.IMAGE_ICON,
+			32,
+			32,
+			win.LR_LOADFROMFILE,
+		),
+		lpszClassName = auto_cast raw_data(Mem.Settings.name),
 	}
-
 	if win.RegisterClassW(&window_class) == 0 {
-		win.OutputDebugStringA("ERROR")
+		fmt.println("Cannot initialize window")
 		return
 	}
 
 	buffer.window = win.CreateWindowExW(
 		0,
 		window_class.lpszClassName,
-		auto_cast raw_data(Settings.name),
+		auto_cast raw_data(Mem.Settings.name),
 		win.WS_OVERLAPPEDWINDOW | win.WS_VISIBLE,
 		win.CW_USEDEFAULT,
 		win.CW_USEDEFAULT,
-		Settings.resolution.x,
-		Settings.resolution.y,
+		width,
+		height,
 		nil,
 		nil,
 		instance,
@@ -202,10 +214,6 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 
 GetMouse :: proc() -> [2]i32 {
 	pt: win.POINT
-
-	if ok := win.GetCursorPos(&pt); !ok {
-		// LOG
-	}
-
+	if ok := win.GetCursorPos(&pt); !ok do fmt.println("")
 	return {pt.x, pt.y}
 }
