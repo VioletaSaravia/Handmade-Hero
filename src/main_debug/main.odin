@@ -7,7 +7,7 @@ import "core:log"
 import "core:mem"
 import "core:os"
 import "core:os/os2"
-import "core:path/filepath"
+import fp "core:path/filepath"
 
 GAME_DLL_PATH :: "game.dll"
 
@@ -55,10 +55,6 @@ LoadAPI :: proc(api_version: i32) -> (api: GameAPI, ok: bool) {
 	game_dll_name := fmt.tprintf("game_{0}.dll", api_version)
 	CopyDLL(game_dll_name) or_return
 
-	// This proc matches the names of the fields in Game_API to symbols in the
-	// game DLL. It actually looks for symbols starting with `game_`, which is
-	// why the argument `"game_"` is there.
-
 	if _, ok = dynlib.initialize_symbols(&api, game_dll_name, "Game", "lib"); !ok {
 		fmt.printfln("Failed initializing symbols: {0}", dynlib.last_error())
 	}
@@ -95,7 +91,7 @@ ResetTrackingAllocator :: proc(a: ^mem.Tracking_Allocator) -> (ok: bool = true) 
 
 main :: proc() {
 	exe_path := os.args[0]
-	exe_dir := filepath.dir(string(exe_path), context.temp_allocator)
+	exe_dir := fp.dir(string(exe_path), context.temp_allocator)
 	if err := os.set_current_directory(exe_dir); err != nil {
 		fmt.printf("Couldn't set current directory to %s", exe_dir)
 	}
@@ -118,16 +114,13 @@ main :: proc() {
 	g.EngineInit()
 	old_apis := make([dynamic]GameAPI, default_allocator)
 
-	for g.IsRunning() {
+	loop: for g.IsRunning() {
 		g.EngineUpdate()
+
 		game_dll_mod, game_dll_mod_err := os.last_write_time_by_name(GAME_DLL_PATH)
 		if game_dll_mod_err != os.ERROR_NONE || g.mod_time == game_dll_mod do continue
 
 		if new_api, ok := LoadAPI(api_version); ok {
-			// Note that we don't unload the old game APIs because that
-			// would unload the DLL. The DLL can contain stored info
-			// such as string literals. The old DLLs are only unloaded
-			// on a full reset or on shutdown.
 			append(&old_apis, g)
 			game_memory := g.GetMemory()
 			g = new_api
@@ -137,10 +130,8 @@ main :: proc() {
 		}
 	}
 
-	if g.lib != nil {
-		if !dynlib.unload_library(g.lib) {
-			fmt.printfln("Failed unloading lib: {0}", dynlib.last_error())
-		}
+	if g.lib != nil && !dynlib.unload_library(g.lib) {
+		fmt.printfln("Failed unloading lib: {0}", dynlib.last_error())
 	}
 
 	for api in old_apis {

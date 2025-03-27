@@ -1,0 +1,10 @@
+{
+    "emeraldwalk.runonsave": {
+        "commands": [
+            {
+                "cmd": "${workspaceFolder}/build.bat",
+                "match": "\\.odin$"
+            }
+        ]
+    }
+}

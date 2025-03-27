@@ -2,9 +2,9 @@
 setlocal enabledelayedexpansion
 
 if "%1"=="release" (
-    odin build -strict .\src\main_release -out:build/win32/main.exe
-    mv .\data\ .\build\win32\data
-    mv .\shaders\ .\build\win32\shaders
+    odin build .\src\main_release -out:build/win32/main.exe
+    REM mv .\data\ .\build\win32\data
+    REM mv .\shaders\ .\build\win32\shaders
 ) else (
     set PDB_NUMBER=0
 
