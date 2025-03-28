@@ -114,8 +114,11 @@ MainWindowCallback :: proc "std" (
 	case win.WM_ACTIVATEAPP:
 
 	case win.WM_SYSKEYDOWN, win.WM_SYSKEYUP, win.WM_KEYDOWN, win.WM_KEYUP:
-		was_down := l_param & (1 << 30)
+		was_down := l_param & (1 << 30) != 0
 		is_down := l_param & (1 << 31) == 0
+
+		Mem.Input.keyboard[w_param] =
+			was_down && is_down ? .Pressed : !was_down && is_down ? .JustPressed : .JustReleased
 
 	case:
 		result = win.DefWindowProcA(window, msg, w_param, l_param)

@@ -7,7 +7,7 @@ import fp "core:path/filepath"
 WHITE :: [4]f32{1, 1, 1, 1}
 BLACK :: [4]f32{0, 0, 0, 1}
 
-BMPColor :: struct {
+BMPColor :: struct #packed {
 	b, g, r, a: u8,
 }
 
@@ -26,6 +26,7 @@ BMPCompression :: enum u32 {
 
 AseBMP32x32 :: struct #packed {
 	// BMFH
+	bf_type:        u16,
 	bf_size:        u32,
 	bf_reserved1:   u16,
 	bf_reserved2:   u16,
@@ -50,18 +51,17 @@ AseBMP32x32 :: struct #packed {
 
 Image :: []u8
 
-LoadImage :: proc(path: string) -> (result: Image, ok: bool) {
+LoadImage :: proc($path: string) -> (result: Image, ok: bool) {
 	switch fp.ext(path) {
 	case ".bmp":
-		data := transmute(^AseBMP32x32)raw_data(os.read_entire_file_from_filename(path) or_return)
-		result = make([]u8, 1024)
-		for i := 0; i < len(data.line_data); i += 4 {
-			color := data.rgbq[i]
-			// Backwards?
-			result[i] = color.r
-			result[i + 1] = color.g
-			result[i + 2] = color.b
-			result[i + 3] = color.a
+		data := transmute(^AseBMP32x32)raw_data(#load(DATA + path, []byte))
+		result = make([]u8, 1024 * 4)
+		for color, i in data.rgbq {
+			id := i * 4
+			result[id + 0] = color.r
+			result[id + 1] = color.g
+			result[id + 2] = color.b
+			result[id + 3] = color.a
 		}
 		return result, true
 	case:

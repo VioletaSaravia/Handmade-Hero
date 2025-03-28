@@ -18,6 +18,8 @@ GameSettings :: struct {
 	memory:     uint,
 }
 
+DATA :: "../../data/" // TODO(violeta): arruina el linter: when ODIN_DEBUG else "data/"
+
 
 @(export)
 GameIsRunning :: proc() -> bool {return Mem.Running}
@@ -99,11 +101,11 @@ TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
 Memory :: struct {
 	Settings:    GameSettings,
 	Running:     bool,
-	Audio:       AudioBuffer,
+	Data:        proc(),
 	Input:       InputBuffer,
 	Timing:      TimingBuffer,
 	Window:      WindowBuffer,
-	// Audio:      AudioBuffer,
+	Audio:       AudioBuffer,
 	Shaders:     [8]Shader,
 	DefaultRect: Rectangle,
 	GameMemory:  [1]byte, // TODO(violeta): Mmmhh
@@ -117,6 +119,7 @@ GameGetMemory :: proc() -> rawptr {return Mem}
 @(export)
 GameReloadMemory :: proc(memory: rawptr) {
 	Mem = auto_cast memory
+	Mem.Data()
 	gl.load_up_to(4, 6, win.gl_set_proc_address)
 }
 
@@ -141,7 +144,6 @@ Settings :: proc(settings: GameSettings) {
 	Mem.Settings = settings
 }
 
-
 @(export)
 GameEngineInit :: proc() {
 	GameProcs.Setup()
@@ -150,7 +152,7 @@ GameEngineInit :: proc() {
 	if Mem.Window, ok = InitWindow(); !ok do return
 	if ok = InitOpenGL(Mem.Window.window); !ok do return
 	Mem.DefaultRect = NewRectangle()
-	// if Audio^, ok = InitAudio(); !ok do return
+	if ok = InitAudio(&Mem.Audio); !ok do return
 	Mem.Timing, Mem.Window.perf_count_freq = InitTiming(Mem.Window.refresh_rate)
 
 	if Mem.Settings.fullscreen do Fullscreen(Mem.Window.window)
@@ -158,6 +160,8 @@ GameEngineInit :: proc() {
 	if default_shader, ok := NewShader("", ""); ok {
 		Mem.Shaders[0] = default_shader
 	}
+
+	Mem.Data()
 	GameProcs.Init()
 }
 
@@ -173,8 +177,11 @@ GameEngineUpdate :: proc() {
 		}
 	}
 
-
 	GameProcs.Update()
-
 	TimeAndRender(&Mem.Timing, &Mem.Window)
+}
+
+@(export)
+GameEngineShutdown :: proc() {
+	ShutdownAudio(&Mem.Audio)
 }

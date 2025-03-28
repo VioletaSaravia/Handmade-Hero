@@ -24,21 +24,22 @@ CopyDLL :: proc(to: string) -> bool {
 
 GameAPI :: struct {
 	// Reload Data
-	mod_time:     os.File_Time,
-	version:      i32,
-	lib:          dynlib.Library,
+	mod_time:       os.File_Time,
+	version:        i32,
+	lib:            dynlib.Library,
 
 	// Procs
-	EngineInit:   proc(),
-	EngineUpdate: proc(),
-	Load:         proc(setup, init, update, draw: proc()),
-	Setup:        proc(),
-	Init:         proc(),
-	Update:       proc(),
-	Draw:         proc(),
-	ReloadMemory: proc(memory: rawptr),
-	IsRunning:    proc() -> bool,
-	GetMemory:    proc() -> rawptr,
+	EngineInit:     proc(),
+	EngineUpdate:   proc(),
+	EngineShutdown: proc(),
+	Load:           proc(setup, init, update, draw: proc()),
+	Setup:          proc(),
+	Init:           proc(),
+	Update:         proc(),
+	Draw:           proc(),
+	ReloadMemory:   proc(memory: rawptr),
+	IsRunning:      proc() -> bool,
+	GetMemory:      proc() -> rawptr,
 }
 
 
@@ -130,6 +131,8 @@ main :: proc() {
 		}
 	}
 
+	g.EngineShutdown()
+
 	if g.lib != nil && !dynlib.unload_library(g.lib) {
 		fmt.printfln("Failed unloading lib: {0}", dynlib.last_error())
 	}
@@ -141,11 +144,7 @@ main :: proc() {
 	}
 
 	for i in 0 ..< 99 {
-		if err := os.remove(fmt.aprintf("game_{0}.dll", i)); err != os.ERROR_NONE {
-			fmt.println("DLL not deleted.")
-		}
-		if err := os.remove(fmt.aprintf("game_{0}.pdb", i)); err != os.ERROR_NONE {
-			fmt.println("DLL not deleted.")
-		}
+		_ = os.remove(fmt.aprintf("game_{0}.dll", i))
+		_ = os.remove(fmt.aprintf("game_{0}.pdb", i))
 	}
 }

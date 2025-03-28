@@ -1,9 +1,17 @@
 package engine
 
+import "core:fmt"
 import ma "vendor:miniaudio"
+
+AUDIO_CHANNELS :: 2
+AUDIO_SAMPLE_RATE :: 44100
+AUDIO_FORMAT :: ma.format.f32
+
+MAX_SOUNDS :: 16
 
 AudioBuffer :: struct {
 	device: ma.device,
+	sounds: [MAX_SOUNDS]Sound,
 }
 
 AudioDataCallback :: proc "c" (
@@ -12,39 +20,122 @@ AudioDataCallback :: proc "c" (
 	input: rawptr,
 	frame_count: u32,
 ) {
+	if device.pUserData == nil do return
 	out := ([^]f32)(output)
-	for f: u32; f < frame_count; f += 2 {
-		out[f] = 0
-		out[f + 1] = 0
+	sounds := (^[8]Sound)(device.pUserData)
+
+	temp: [4096]f32
+
+	for &s in sounds {
+		if !s.playing do continue
+
+		read: u64
+		ma.decoder_read_pcm_frames(&s.decoder, &temp, auto_cast frame_count, &read)
+		if read == 0 {
+			// FIXME(viole): Skips a whole callback worth of frames at the worst.
+			s.playing = s.type != .looping ? false : true
+			ma.decoder_seek_to_pcm_frame(&s.decoder, 0)
+		}
+
+		for i in 0 ..< read * AUDIO_CHANNELS {
+			pan := i % 2 == 0 ? s.pan * -1 : s.pan
+			if pan > 0 do pan = 0
+			if pan < -1 do pan = -1
+
+			out[(cast(u64)frame_count - read) * AUDIO_CHANNELS + i] += (temp[i] * (s.volume + pan))
+		}
 	}
 }
 
-InitAudio :: proc() -> (result: AudioBuffer, ok: bool = false) {
+InitAudio :: proc(buffer: ^AudioBuffer) -> (ok: bool) {
 	config := ma.device_config_init(.playback)
-	config.playback.format = .f32 // PCM format
-	config.playback.channels = 0 // Use device's native
-	config.playback.pDeviceID = nil
+	config.playback.format = AUDIO_FORMAT
+	config.playback.channels = AUDIO_CHANNELS
 
-	config.sampleRate = 0 // Use device's native
+	config.sampleRate = AUDIO_SAMPLE_RATE
 	config.dataCallback = AudioDataCallback
-	config.pUserData = nil // ???
+	config.pUserData = &buffer.sounds
 
-	ma.device_init(nil, &config, &result.device)
-	ma.device_start(&result.device)
-	return
+	if err := ma.device_init(nil, &config, &buffer.device); err != ma.result.SUCCESS {
+		fmt.println(err)
+		return
+	}
+	if err := ma.device_start(&buffer.device); err != ma.result.SUCCESS {
+		fmt.println(err)
+		ma.device_uninit(&buffer.device)
+		return
+	}
+
+	return true
 }
 
-StopAudio :: proc(audio: ^AudioBuffer) {
+ShutdownAudio :: proc(audio: ^AudioBuffer) {
 	ma.device_stop(&audio.device)
 	ma.device_uninit(&audio.device)
+	for &s in audio.sounds do _ = ma.decoder_uninit(&s.decoder)
+}
+
+SoundType :: enum {
+	oneshot,
+	looping,
+	held,
+}
+
+SoundSource :: union {
+	ma.waveform,
+	ma.device,
 }
 
 Sound :: struct {
-	data:    []byte,
-	volume:  f32,
+	data:    []byte, // TODO: Innecesario?
+	volume:  f32, // [0; 1]
+	pan:     f32, // [-1; 1]
+	type:    SoundType,
 	playing: bool,
+	decoder: ma.decoder,
 }
 
-LoadSound :: proc(path: string) -> Sound {
-	return {}
+LoadSound :: proc($path: string, type: SoundType = .oneshot) -> (result: Sound) {
+	result = {
+		data   = #load(DATA + path, []byte),
+		volume = 1.0,
+		type   = type,
+	}
+
+	// No hace falta, pero es más eficiente que dejar que miniaudio adivine el formato.
+	config := ma.decoder_config {
+		format     = AUDIO_FORMAT,
+		channels   = AUDIO_CHANNELS,
+		sampleRate = AUDIO_SAMPLE_RATE,
+		// encodingFormat = .wav,
+	}
+
+	if err := ma.decoder_init_memory(
+		raw_data(result.data),
+		len(result.data),
+		&config,
+		&result.decoder,
+	); err != ma.result.SUCCESS {
+		fmt.println(err)
+	}
+	return
+}
+
+// TODO: Idea: play/pause/etc. overloads para anims, sonido, etc.
+PlaySound :: proc(sound: ^Sound) {
+	sound.playing = true
+	ma.decoder_seek_to_pcm_frame(&sound.decoder, 0)
+}
+
+StopSound :: proc(sound: ^Sound) {
+	sound.playing = false
+	ma.decoder_seek_to_pcm_frame(&sound.decoder, 0)
+}
+
+PauseSound :: proc(sound: ^Sound) {
+	sound.playing = false
+}
+
+ResumeSound :: proc(sound: ^Sound) {
+	sound.playing = true
 }

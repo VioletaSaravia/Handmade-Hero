@@ -20,8 +20,8 @@ void main() {
     vec2 pos_n = pos / res;
 
     gl_Position = vec4(
-            aPos.x * size_n.x + pos_n.x,
-            aPos.y * size_n.y + pos_n.y,
+            aPos.x * size_n.x + pos_n.x * 2 - 1 + size_n.x,
+            aPos.y * size_n.y - pos_n.y * 2 + 1 - size_n.y,
             aPos.z,
             1.0f
         );
