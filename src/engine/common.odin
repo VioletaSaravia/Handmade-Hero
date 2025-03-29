@@ -22,7 +22,7 @@ DATA :: "../../data/" // TODO(violeta): arruina el linter: when ODIN_DEBUG else 
 
 
 @(export)
-GameIsRunning :: proc() -> bool {return Mem.Running}
+GameIsRunning :: proc() -> bool {return Mem.Window.running}
 
 
 InitMemory :: proc(size: uint) -> rawptr {
@@ -30,7 +30,7 @@ InitMemory :: proc(size: uint) -> rawptr {
 }
 
 TimingBuffer :: struct {
-	target_spf, delta:    f64,
+	delta, target_spf:    f32,
 	last_counter:         i64,
 	last_cycle_count:     i64,
 
@@ -40,12 +40,12 @@ TimingBuffer :: struct {
 }
 
 InitTiming :: proc(refresh_rate: u32) -> (result: TimingBuffer, perf_count_freq: i64) {
-	target_spf := 1.0 / (f64(refresh_rate) / 2.0)
+	target_spf := 1.0 / (f32(refresh_rate))
 	result = {
 		target_spf           = target_spf,
 		last_counter         = InitPerformanceCounter(&perf_count_freq),
 		last_cycle_count     = intrinsics.read_cycle_counter(),
-		delta                = target_spf,
+		delta                = auto_cast target_spf,
 		desired_scheduler_ms = 1,
 		granular_sleep_on    = auto_cast win.timeBeginPeriod(1),
 	}
@@ -61,15 +61,14 @@ GetWallClock :: proc() -> i64 {
 
 InitPerformanceCounter :: proc(freq: ^i64) -> i64 {
 	result: win.LARGE_INTEGER
-	win.QueryPerformanceCounter(&result)
+	win.QueryPerformanceFrequency(&result)
 	freq^ = i64(result)
 
 	return GetWallClock()
 }
 
-GetSecondsElapsed :: proc(perf_count_freq, start, end: i64) -> (result: f64) {
-	result = f64(end - start) / f64(perf_count_freq)
-	return
+GetSecondsElapsed :: proc(perf_count_freq, start, end: i64) -> f32 {
+	return f32(end - start) / f32(perf_count_freq)
 }
 
 TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
@@ -77,11 +76,13 @@ TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
 	cycles_elapsed := end_cycle_count - state.last_cycle_count
 	megacycles_per_frame := f64(cycles_elapsed) / (1000.0 * 1000.0)
 
-	state.delta = GetSecondsElapsed(Mem.Window.perf_count_freq, state.last_counter, GetWallClock())
-	// for state.delta < state.target_spf {
-	// 	if state.granular_sleep_on do win.Sleep(u32(1000.0 * (state.target_spf - state.delta)))
-	// 	state.delta = GetSecondsElapsed(Window.perf_count_freq, state.last_counter, GetWallClock())
-	// }
+	state.delta =
+	auto_cast GetSecondsElapsed(Mem.Window.perf_count_freq, state.last_counter, GetWallClock())
+	for state.delta < state.target_spf {
+		if state.granular_sleep_on do win.Sleep(u32(1000.0 * (state.target_spf - state.delta)))
+		state.delta =
+		auto_cast GetSecondsElapsed(Mem.Window.perf_count_freq, state.last_counter, GetWallClock())
+	}
 
 	ms_per_frame := state.delta * 1000.0
 	ms_behind := (state.delta - state.target_spf) * 1000.0
@@ -98,28 +99,36 @@ TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
 	state.last_cycle_count = end_cycle_count
 }
 
+Mem: ^Memory
 Memory :: struct {
-	Settings:    GameSettings,
-	Running:     bool,
-	Data:        proc(),
-	Input:       InputBuffer,
-	Timing:      TimingBuffer,
-	Window:      WindowBuffer,
-	Audio:       AudioBuffer,
-	Shaders:     [8]Shader,
-	DefaultRect: Rectangle,
-	GameMemory:  [1]byte, // TODO(violeta): Mmmhh
+	LoadData:   proc(),
+	Settings:   GameSettings,
+	Input:      InputBuffer,
+	Timing:     TimingBuffer,
+	Window:     WindowBuffer,
+	Audio:      AudioBuffer,
+	Graphics:   GraphicsBuffer,
+	GameMemory: [1]byte, // TODO(violeta): Mmmhh
 }
 
-Mem: ^Memory
+Input :: proc() -> ^InputBuffer {return &Mem.Input}
+Audio :: proc() -> ^AudioBuffer {return &Mem.Audio}
+Delta :: proc() -> f32 {return Mem.Timing.delta}
+
+GraphicsBuffer :: struct {
+	Shaders:    [8]Shader,
+	SquareMesh: Mesh,
+}
 
 @(export)
 GameGetMemory :: proc() -> rawptr {return Mem}
 
+GetUserMemory :: proc(offset: uint) -> rawptr {return auto_cast raw_data(Mem.GameMemory[:])}
+
 @(export)
 GameReloadMemory :: proc(memory: rawptr) {
 	Mem = auto_cast memory
-	Mem.Data()
+	Mem.LoadData()
 	gl.load_up_to(4, 6, win.gl_set_proc_address)
 }
 
@@ -140,7 +149,6 @@ GameLoad :: proc(setup, init, update, draw: proc()) {
 
 Settings :: proc(settings: GameSettings) {
 	if Mem = auto_cast (InitMemory(settings.memory + size_of(Memory))); Mem == nil do return
-	Mem.Running = true
 	Mem.Settings = settings
 }
 
@@ -150,18 +158,18 @@ GameEngineInit :: proc() {
 
 	ok: bool
 	if Mem.Window, ok = InitWindow(); !ok do return
-	if ok = InitOpenGL(Mem.Window.window); !ok do return
-	Mem.DefaultRect = NewRectangle()
+	if ok = InitOpenGL(Mem.Window.window, &Mem.Settings); !ok do return
+	Mem.Graphics.SquareMesh = NewMesh(square_vertices[:], square_indices[:])
 	if ok = InitAudio(&Mem.Audio); !ok do return
 	Mem.Timing, Mem.Window.perf_count_freq = InitTiming(Mem.Window.refresh_rate)
 
 	if Mem.Settings.fullscreen do Fullscreen(Mem.Window.window)
 
 	if default_shader, ok := NewShader("", ""); ok {
-		Mem.Shaders[0] = default_shader
+		Mem.Graphics.Shaders[0] = default_shader
 	}
 
-	Mem.Data()
+	Mem.LoadData()
 	GameProcs.Init()
 }
 
@@ -171,8 +179,11 @@ GameEngineUpdate :: proc() {
 	ProcessControllers(&Mem.Input)
 	ProcessMouse(&Mem.Input)
 
-	for &s in Mem.Shaders {
-		if err := ReloadShader(&s); err != nil {
+	when ODIN_DEBUG {
+		if Input().keys[Key.F11] == .JustPressed do Fullscreen(Mem.Window.window)
+		if Input().keys[Key.Esc] == .JustPressed do Mem.Window.running = false
+
+		for &s in Mem.Graphics.Shaders do if err := ReloadShader(&s); err != nil {
 			fmt.println("Shader Reload Error:", err)
 		}
 	}

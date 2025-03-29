@@ -52,9 +52,11 @@ AseBMP32x32 :: struct #packed {
 Image :: []u8
 
 LoadImage :: proc($path: string) -> (result: Image, ok: bool) {
+	data := raw_data(#load(DATA + path, []byte))
+
 	switch fp.ext(path) {
 	case ".bmp":
-		data := transmute(^AseBMP32x32)raw_data(#load(DATA + path, []byte))
+		data := transmute(^AseBMP32x32)data
 		result = make([]u8, 1024 * 4)
 		for color, i in data.rgbq {
 			id := i * 4

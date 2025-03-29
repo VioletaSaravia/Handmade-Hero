@@ -5,8 +5,8 @@ import win "core:sys/windows"
 import gl "vendor:OpenGL"
 
 ButtonState :: enum u8 {
-	Released,
 	JustReleased,
+	Released,
 	Pressed,
 	JustPressed,
 }
@@ -72,7 +72,7 @@ MouseState :: struct {
 
 InputBuffer :: struct {
 	gamepads: [CONTROLLER_COUNT]ControllerState,
-	keyboard: [KEY_COUNT]ButtonState,
+	keys:     [KEY_COUNT]ButtonState,
 	mouse:    MouseState,
 }
 
@@ -86,25 +86,23 @@ MainWindowCallback :: proc "std" (
 ) {
 	switch msg {
 	case win.WM_SETCURSOR:
-		if win.LOWORD(l_param) == win.HTCLIENT {
-			win.SetCursor(win.LoadCursorA(nil, win.IDC_ARROW))
-			result = 1
-		} else {
-			result = win.DefWindowProcA(window, msg, w_param, l_param)
-		}
+		win.SetCursor(
+			win.LOWORD(l_param) == win.HTCLIENT ? nil : win.LoadCursorA(nil, win.IDC_ARROW),
+		)
 
 	case win.WM_SIZE:
 
 	case win.WM_DESTROY:
 		win.OutputDebugStringA("Window forcefully closed")
-		Mem.Running = false
+		Mem.Window.running = false
 		win.PostQuitMessage(0)
 
 	case win.WM_CLOSE:
-		Mem.Running = false
+		Mem.Window.running = false
 
 	case win.WM_MOUSEWHEEL:
-		Mem.Input.mouse.wheel = auto_cast win.HIWORD(w_param)
+		// TODO: No parece correcto.
+		Mem.Input.mouse.wheel = auto_cast win.GET_WHEEL_DELTA_WPARAM(w_param)
 
 	case win.WM_PAINT:
 		paint: win.PAINTSTRUCT
@@ -117,7 +115,7 @@ MainWindowCallback :: proc "std" (
 		was_down := l_param & (1 << 30) != 0
 		is_down := l_param & (1 << 31) == 0
 
-		Mem.Input.keyboard[w_param] =
+		Mem.Input.keys[w_param] =
 			was_down && is_down ? .Pressed : !was_down && is_down ? .JustPressed : .JustReleased
 
 	case:
@@ -128,8 +126,11 @@ MainWindowCallback :: proc "std" (
 }
 
 ProcessKeyboard :: proc(buffer: ^InputBuffer) {
-	for &i in buffer.keyboard {
+	for &i in buffer.keys {
 		if i == .JustReleased do i = .Released
+	}
+	for &i in buffer.keys {
+		if i == .JustPressed do i = .Pressed
 	}
 
 	message: win.MSG
@@ -141,7 +142,7 @@ ProcessKeyboard :: proc(buffer: ^InputBuffer) {
 			    1,
 			    /* PM_REMOVE ? */
 		    )) {
-		if message.message == win.WM_QUIT do Mem.Running = false
+		if message.message == win.WM_QUIT do Mem.Window.running = false
 		win.TranslateMessage(&message)
 		win.DispatchMessageW(&message)
 	}
@@ -200,21 +201,21 @@ ProcessControllers :: proc(buffer: ^InputBuffer) {
 }
 
 ProcessMouse :: proc(buffer: ^InputBuffer) {
-	// La rueda del mouse se maneja en MainWindowCallback
+	// NOTE: La rueda del mouse se maneja en MainWindowCallback
 
 	if (win.GetAsyncKeyState(win.VK_LBUTTON) & -1) !=  /* ? */0 {
-		buffer.mouse.left = buffer.mouse.left == .JustPressed ? .Pressed : .JustPressed
+		buffer.mouse.left = buffer.mouse.left >= .Pressed ? .Pressed : .JustPressed
 	} else {
-		buffer.mouse.left = buffer.mouse.left == .JustReleased ? .Released : .JustReleased
+		buffer.mouse.left = buffer.mouse.left <= .Released ? .Released : .JustReleased
 	}
 	if (win.GetAsyncKeyState(win.VK_RBUTTON) & -1) !=  /* ? */0 {
-		buffer.mouse.right = buffer.mouse.right == .JustPressed ? .Pressed : .JustPressed
+		buffer.mouse.right = buffer.mouse.right >= .Pressed ? .Pressed : .JustPressed
 	} else {
-		buffer.mouse.right = buffer.mouse.right == .JustReleased ? .Released : .JustReleased
+		buffer.mouse.right = buffer.mouse.right <= .Released ? .Released : .JustReleased
 	}
 	if (win.GetAsyncKeyState(win.VK_MBUTTON) & -1) !=  /* ? */0 {
-		buffer.mouse.middle = buffer.mouse.middle == .JustPressed ? .Pressed : .JustPressed
+		buffer.mouse.middle = buffer.mouse.middle >= .Pressed ? .Pressed : .JustPressed
 	} else {
-		buffer.mouse.middle = buffer.mouse.middle == .JustReleased ? .Released : .JustReleased
+		buffer.mouse.middle = buffer.mouse.middle <= .Released ? .Released : .JustReleased
 	}
 }

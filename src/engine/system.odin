@@ -79,6 +79,7 @@ FreeFileMemory :: proc(memory: rawptr) -> bool {
 
 
 WindowBuffer :: struct {
+	running:         bool,
 	memory:          [^]byte, // Remove?
 	w, h:            i32,
 	bytes_per_pixel: i32,
@@ -98,6 +99,8 @@ Fullscreen :: proc(window: win.HWND) {
 
 	win.SetMenu(window, nil)
 	win.SetWindowPos(window, win.HWND_TOPMOST, 0, 0, w, h, win.SWP_NOZORDER | win.SWP_FRAMECHANGED)
+
+	ResizeWindow(window, w, h, true)
 }
 
 GetRefreshRate :: proc(window: win.HWND) -> u32 {
@@ -158,15 +161,19 @@ GetResolution :: proc() -> [2]i32 {
 	return {client_rect.right - client_rect.left, client_rect.bottom - client_rect.top}
 }
 
-ResizeWindow :: proc(hWnd: win.HWND, width, h: i32) {
+ResizeWindow :: proc(hWnd: win.HWND, width, h: i32, fullscreen: bool = false) {
 	height := h == 0 ? 1 : h // Prevent division by zero
 
 	rect := win.RECT{0, 0, width, height}
-	win.AdjustWindowRect(
-		&rect,
-		win.WS_OVERLAPPED | win.WS_CAPTION | win.WS_SYSMENU | win.WS_MINIMIZEBOX,
-		win.FALSE,
-	)
+
+	if !fullscreen {
+		win.AdjustWindowRect(
+			&rect,
+			win.WS_OVERLAPPED | win.WS_CAPTION | win.WS_SYSMENU | win.WS_MINIMIZEBOX,
+			win.FALSE,
+		)
+	}
+
 	win.SetWindowPos(
 		hWnd,
 		nil,
@@ -187,7 +194,6 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 	win.AdjustWindowRect(&rect, win.WS_OVERLAPPEDWINDOW, auto_cast false)
 	width := rect.right - rect.left
 	height := rect.bottom - rect.top
-
 	ResizeDIBSection(&buffer, width, height)
 	instance := win.HINSTANCE(win.GetModuleHandleW(nil))
 
@@ -214,6 +220,7 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 		0,
 		window_class.lpszClassName,
 		auto_cast raw_data(Mem.Settings.name),
+		// TODO: Abstract into Mem.Window
 		win.WS_OVERLAPPED | win.WS_CAPTION | win.WS_SYSMENU | win.WS_MINIMIZEBOX | win.WS_VISIBLE,
 		win.CW_USEDEFAULT,
 		win.CW_USEDEFAULT,
@@ -224,7 +231,6 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 		instance,
 		nil,
 	)
-
 	if buffer.window == nil {
 		win.OutputDebugStringA("ERROR")
 		return
@@ -232,12 +238,31 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 
 	buffer.dc = win.GetDC(buffer.window)
 	buffer.refresh_rate = GetRefreshRate(buffer.window)
+	buffer.running = true
 	ok = true
+
 	return
 }
 
-GetMouse :: proc() -> [2]i32 {
+GetMouse :: proc() -> [2]f32 {
 	pt: win.POINT
 	if ok := win.GetCursorPos(&pt); !ok do fmt.println("")
-	return {pt.x, pt.y}
+
+	rect: win.RECT
+	if ok := win.GetWindowRect(Mem.Window.window, &rect); !ok do fmt.println("")
+	// if ok := win.AdjustWindowRect(
+	// 	&rect,
+	// 	win.WS_OVERLAPPED | win.WS_CAPTION | win.WS_SYSMENU | win.WS_MINIMIZEBOX,
+	// 	win.FALSE,
+	// ); !ok {fmt.println("")}
+
+	return {f32(pt.x - rect.left - 8), f32(pt.y - rect.top - 31)}
+}
+
+LockCursorToWindow :: proc(hWnd: win.HWND) {
+	rect: win.RECT
+	win.GetClientRect(hWnd, &rect)
+	win.ClientToScreen(hWnd, auto_cast &rect.left)
+	win.ClientToScreen(hWnd, auto_cast &rect.top)
+	win.ClipCursor(&rect)
 }

@@ -69,10 +69,9 @@ LoadAPI :: proc(api_version: i32) -> (api: GameAPI, ok: bool) {
 }
 
 UnloadAPI :: proc(api: ^GameAPI) {
-	if api.lib != nil {
-		if !dynlib.unload_library(api.lib) {
-			fmt.printfln("Failed unloading lib: {0}", dynlib.last_error())
-		}
+	if api.lib == nil do return
+	if !dynlib.unload_library(api.lib) {
+		fmt.printfln("Failed unloading lib: {0}", dynlib.last_error())
 	}
 
 	if os.remove(fmt.tprintf("game_{0}.dll", api.version)) != nil {
@@ -93,6 +92,7 @@ ResetTrackingAllocator :: proc(a: ^mem.Tracking_Allocator) -> (ok: bool = true) 
 main :: proc() {
 	exe_path := os.args[0]
 	exe_dir := fp.dir(string(exe_path), context.temp_allocator)
+
 	if err := os.set_current_directory(exe_dir); err != nil {
 		fmt.printf("Couldn't set current directory to %s", exe_dir)
 	}

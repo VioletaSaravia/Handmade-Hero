@@ -10,7 +10,7 @@ import stbi "vendor:stb/image"
 
 SHADER_PATH :: "../../shaders/" when ODIN_DEBUG else "shaders/"
 
-InitOpenGL :: proc(window: win.HWND) -> (ok: bool = true) {
+InitOpenGL :: proc(window: win.HWND, settings: ^GameSettings) -> (ok: bool = true) {
 	desired_pixel_format := win.PIXELFORMATDESCRIPTOR {
 		nSize      = size_of(win.PIXELFORMATDESCRIPTOR),
 		nVersion   = 1,
@@ -29,7 +29,7 @@ InitOpenGL :: proc(window: win.HWND) -> (ok: bool = true) {
 	win.wglMakeCurrent(window_dc, opengl_rc) or_return
 	gl.load_up_to(4, 6, win.gl_set_proc_address)
 
-	gl.Viewport(0, 0, Mem.Settings.resolution.x, Mem.Settings.resolution.y)
+	gl.Viewport(0, 0, settings.resolution.x, settings.resolution.y)
 	win.ReleaseDC(window, window_dc)
 	return
 }
@@ -52,7 +52,7 @@ PrintShaderError :: proc(shader: u32) {
 	info_log := make([^]u8, 512)
 	len: i32
 	gl.GetShaderInfoLog(shader, 512, &len, info_log)
-	fmt.println("[SHADER ERROR]", info_log[:])
+	fmt.println("[SHADER ERROR]", info_log[:len])
 }
 
 NewShader :: proc(vert_file: string, frag_file: string) -> (new: Shader, ok: bool) {
@@ -138,18 +138,23 @@ ReloadShader :: proc(shader: ^Shader) -> os.Error {
 SetUniform1i :: proc(id: u32, name: string, value: i32) {
 	gl.Uniform1i(gl.GetUniformLocation(id, auto_cast raw_data(name)), value)
 }
+
 SetUniform2i :: proc(id: u32, name: string, value: [2]i32) {
 	gl.Uniform2i(gl.GetUniformLocation(id, auto_cast raw_data(name)), value.x, value.y)
 }
+
 SetUniform1f :: proc(id: u32, name: string, value: f32) {
 	gl.Uniform1f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value)
 }
+
 SetUniform2fv :: proc(id: u32, name: string, value: [2]f32) {
 	gl.Uniform2f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value.x, value.y)
 }
+
 SetUniform3fv :: proc(id: u32, name: string, value: [3]f32) {
 	gl.Uniform3f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value.x, value.y, value.z)
 }
+
 SetUniform4fv :: proc(id: u32, name: string, value: [4]f32) {
 	gl.Uniform4f(
 		gl.GetUniformLocation(id, auto_cast raw_data(name)),
@@ -212,7 +217,7 @@ UseTexture :: proc(tex: Texture) {
 
 Object :: struct {
 	vao: u32,
-	tex: Rectangle,
+	tex: Mesh,
 }
 
 NewObject :: proc() -> Object {
@@ -232,7 +237,6 @@ GuiButtonState :: enum {
 
 GuiButton :: proc(pos: [2]u32, size: [2]u32) -> GuiButtonState {
 	m := transmute([2]u32)GetMouse()
-
 	hovered := pos.x < m.x && pos.x + size.x > m.x && pos.x < m.y && pos.y + size.y > m.y
 	pressed := Mem.Input.mouse.left == .Pressed
 
@@ -241,16 +245,17 @@ GuiButton :: proc(pos: [2]u32, size: [2]u32) -> GuiButtonState {
 	return .Released
 }
 
-Rectangle :: struct {
+Mesh :: struct {
+	// TODO: Hace falta almacenar el EBO y el VBO?
 	ebo, vbo, vao: u32,
 }
 
 @(rodata)
-vertices := [?]f32{1, 1, 0, 1, -1, 0, -1, -1, 0, -1, 1, 0}
+square_vertices := [?]f32{1, 1, 0, 1, -1, 0, -1, -1, 0, -1, 1, 0}
 @(rodata)
-indices := [?]u32{0, 1, 3, 1, 2, 3}
+square_indices := [?]u32{0, 1, 3, 1, 2, 3}
 
-NewRectangle :: proc() -> (new: Rectangle) {
+NewMeshFromData :: proc(vertices: []f32, indices: []u32) -> (new: Mesh) {
 	gl.GenBuffers(1, &new.ebo)
 	gl.GenBuffers(1, &new.vbo)
 	gl.GenVertexArrays(1, &new.vao)
@@ -258,14 +263,28 @@ NewRectangle :: proc() -> (new: Rectangle) {
 	gl.BindVertexArray(new.vao)
 
 	gl.BindBuffer(gl.ARRAY_BUFFER, new.vbo)
-	gl.BufferData(gl.ARRAY_BUFFER, size_of(vertices), raw_data(vertices[:]), gl.STATIC_DRAW)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		size_of(f32) * len(vertices),
+		raw_data(vertices),
+		gl.STATIC_DRAW,
+	)
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, new.ebo)
-	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, size_of(indices), raw_data(indices[:]), gl.STATIC_DRAW)
+	gl.BufferData(
+		gl.ELEMENT_ARRAY_BUFFER,
+		size_of(u32) * len(indices),
+		raw_data(indices),
+		gl.STATIC_DRAW,
+	)
 
 	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 3 * size_of(f32), uintptr{})
 	gl.EnableVertexAttribArray(0)
 
 	return
+}
+
+NewMesh :: proc {
+	NewMeshFromData,
 }
 
 RectDrawQueue: [dynamic]RectToDraw
@@ -275,13 +294,13 @@ RectToDraw :: struct {
 }
 
 DrawRectangle :: proc(pos: [2]f32, size: [2]f32, color: [4]f32) {
-	UseShader(Mem.Shaders[0])
-	SetUniform(Mem.Shaders[0].id, "color", color)
-	SetUniform(Mem.Shaders[0].id, "pos", pos)
-	SetUniform(Mem.Shaders[0].id, "size", size)
-	SetUniform(Mem.Shaders[0].id, "res", GetResolution())
+	UseShader(Mem.Graphics.Shaders[0])
+	SetUniform(Mem.Graphics.Shaders[0].id, "color", color)
+	SetUniform(Mem.Graphics.Shaders[0].id, "pos", pos)
+	SetUniform(Mem.Graphics.Shaders[0].id, "size", size)
+	SetUniform(Mem.Graphics.Shaders[0].id, "res", GetResolution())
 
-	gl.BindVertexArray(Mem.DefaultRect.vao)
+	gl.BindVertexArray(Mem.Graphics.SquareMesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
 	gl.BindVertexArray(0)
 
