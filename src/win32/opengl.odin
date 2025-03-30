@@ -8,7 +8,7 @@ import win "core:sys/windows"
 import gl "vendor:OpenGL"
 import stbi "vendor:stb/image"
 
-SHADER_PATH :: "../../shaders/" when ODIN_DEBUG else "shaders/"
+SHADER_PATH :: "../../src/shaders/" when ODIN_DEBUG else "shaders/"
 
 InitOpenGL :: proc(window: win.HWND, settings: ^GameSettings) -> (ok: bool = true) {
 	desired_pixel_format := win.PIXELFORMATDESCRIPTOR {

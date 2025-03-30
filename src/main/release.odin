@@ -1,7 +1,7 @@
 package main
 
-import engine "../engine"
 import game "../game"
+import engine "../win32"
 
 import "core:fmt"
 

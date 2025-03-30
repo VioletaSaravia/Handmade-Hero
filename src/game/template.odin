@@ -1,6 +1,6 @@
 package game
 
-import e "../engine"
+import e "../win32"
 import fmt "core:fmt"
 import gl "vendor:OpenGL"
 

@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 if "%1" == "release" (
-    odin build .\src\main_release -out:build/win32/main.exe
+    odin build .\src\main\release.odin -file -out:build/win32/main.exe
     REM mv .\data\ .\build\win32\data
     REM mv .\shaders\ .\build\win32\shaders
 ) else (
@@ -19,6 +19,6 @@ if "%1" == "release" (
 
     handle build/debug/main.exe >nul 2>&1
     if %errorlevel% == 0 (
-        odin build .\src\main_debug -debug -out:build/debug/main.exe
+        odin build .\src\main\debug.odin -file -debug -out:build/debug/main.exe
     )
 )
