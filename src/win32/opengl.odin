@@ -29,6 +29,9 @@ InitOpenGL :: proc(window: win.HWND, settings: ^GameSettings) -> (ok: bool = tru
 	win.wglMakeCurrent(window_dc, opengl_rc) or_return
 	gl.load_up_to(4, 6, win.gl_set_proc_address)
 
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+	gl.Enable(gl.BLEND)
+
 	gl.Viewport(0, 0, settings.resolution.x, settings.resolution.y)
 	win.ReleaseDC(window, window_dc)
 	return
