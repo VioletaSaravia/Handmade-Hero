@@ -116,8 +116,9 @@ Audio :: proc() -> ^AudioBuffer {return &Mem.Audio}
 Delta :: proc() -> f32 {return Mem.Timing.delta}
 
 GraphicsBuffer :: struct {
-	Shaders:    [8]Shader,
-	SquareMesh: Mesh,
+	tex_shader, untex_shader: Shader,
+	square_mesh:              Mesh,
+	camera:                   Camera,
 }
 
 @(export)
@@ -159,15 +160,19 @@ GameEngineInit :: proc() {
 	ok: bool
 	if Mem.Window, ok = InitWindow(); !ok do return
 	if ok = InitOpenGL(Mem.Window.window, &Mem.Settings); !ok do return
-	Mem.Graphics.SquareMesh = NewMesh(square_vertices[:], square_indices[:])
+	Mem.Graphics.square_mesh = NewMesh(square_vertices[:], square_indices[:])
 	if ok = InitAudio(&Mem.Audio); !ok do return
 	Mem.Timing, Mem.Window.perf_count_freq = InitTiming(Mem.Window.refresh_rate)
 
 	if Mem.Settings.fullscreen do Fullscreen(Mem.Window.window)
 
-	if default_shader, ok := NewShader("", ""); ok {
-		Mem.Graphics.Shaders[0] = default_shader
+	if shader, ok := NewShader("", ""); ok {
+		Mem.Graphics.untex_shader = shader
 	}
+	if shader, ok := NewShader("", "textured.frag"); ok {
+		Mem.Graphics.tex_shader = shader
+	}
+	Mem.Graphics.camera = Camera{0, 0}
 
 	Mem.LoadData()
 	GameProcs.Init()
@@ -183,7 +188,10 @@ GameEngineUpdate :: proc() {
 		if Input().keys[Key.F11] == .JustPressed do Fullscreen(Mem.Window.window)
 		if Input().keys[Key.Esc] == .JustPressed do Mem.Window.running = false
 
-		for &s in Mem.Graphics.Shaders do if err := ReloadShader(&s); err != nil {
+		if err := ReloadShader(&Mem.Graphics.tex_shader); err != nil {
+			fmt.println("Shader Reload Error:", err)
+		}
+		if err := ReloadShader(&Mem.Graphics.untex_shader); err != nil {
 			fmt.println("Shader Reload Error:", err)
 		}
 	}

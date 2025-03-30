@@ -2,10 +2,7 @@
 
 out vec4 FragColor;
 
-in vec3 vertColor;
 in vec2 texCoord;
-
-uniform sampler2D tex0;
 
 uniform vec4 color;
 

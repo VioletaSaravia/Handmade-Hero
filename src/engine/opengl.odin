@@ -179,12 +179,9 @@ Texture :: struct {
 	w, h, n_chan: i32,
 }
 
-NewTexture :: proc(filepath: string) -> (new: Texture, ok: bool) {
-	data: []byte
-	data, ok = os.read_entire_file_from_filename(filepath)
-	if !ok {
-		return {}, ok
-	}
+NewTexture :: proc($path: string) -> (new: Texture) {
+	data := #load(DATA + path, []byte)
+
 	img := stbi.load_from_memory(
 		raw_data(data),
 		auto_cast len(data),
@@ -199,8 +196,8 @@ NewTexture :: proc(filepath: string) -> (new: Texture, ok: bool) {
 
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
 
 	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGB, new.w, new.h, 0, gl.RGB, gl.UNSIGNED_BYTE, img)
 	gl.GenerateMipmap(gl.TEXTURE_2D)
@@ -213,15 +210,6 @@ NewTexture :: proc(filepath: string) -> (new: Texture, ok: bool) {
 UseTexture :: proc(tex: Texture) {
 	gl.ActiveTexture(gl.TEXTURE0)
 	gl.BindTexture(gl.TEXTURE_2D, tex.id)
-}
-
-Object :: struct {
-	vao: u32,
-	tex: Mesh,
-}
-
-NewObject :: proc() -> Object {
-	return Object{}
 }
 
 ClearScreen :: proc(color: [3]f32) {
@@ -238,7 +226,7 @@ GuiButtonState :: enum {
 GuiButton :: proc(pos: [2]u32, size: [2]u32) -> GuiButtonState {
 	m := transmute([2]u32)GetMouse()
 	hovered := pos.x < m.x && pos.x + size.x > m.x && pos.x < m.y && pos.y + size.y > m.y
-	pressed := Mem.Input.mouse.left == .Pressed
+	pressed := Input().mouse.left == .Pressed
 
 	if hovered && pressed do return .Pressed
 	if hovered do return .Hovered
@@ -251,7 +239,7 @@ Mesh :: struct {
 }
 
 @(rodata)
-square_vertices := [?]f32{1, 1, 0, 1, -1, 0, -1, -1, 0, -1, 1, 0}
+square_vertices := [?]f32{1, 1, 0, 1, 0, 1, -1, 0, 1, 1, -1, -1, 1, 0, 1, -1, 1, 0, 0, 0}
 @(rodata)
 square_indices := [?]u32{0, 1, 3, 1, 2, 3}
 
@@ -277,8 +265,12 @@ NewMeshFromData :: proc(vertices: []f32, indices: []u32) -> (new: Mesh) {
 		gl.STATIC_DRAW,
 	)
 
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 3 * size_of(f32), uintptr{})
+	stride: i32 = 5 * size_of(f32)
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, stride, 0)
 	gl.EnableVertexAttribArray(0)
+
+	gl.VertexAttribPointer(1, 2, gl.FLOAT, gl.FALSE, stride, (3 * size_of(f32)))
+	gl.EnableVertexAttribArray(1)
 
 	return
 }
@@ -294,13 +286,15 @@ RectToDraw :: struct {
 }
 
 DrawRectangle :: proc(pos: [2]f32, size: [2]f32, color: [4]f32) {
-	UseShader(Mem.Graphics.Shaders[0])
-	SetUniform(Mem.Graphics.Shaders[0].id, "color", color)
-	SetUniform(Mem.Graphics.Shaders[0].id, "pos", pos)
-	SetUniform(Mem.Graphics.Shaders[0].id, "size", size)
-	SetUniform(Mem.Graphics.Shaders[0].id, "res", GetResolution())
+	UseShader(Mem.Graphics.untex_shader)
 
-	gl.BindVertexArray(Mem.Graphics.SquareMesh.vao)
+	SetUniform(Mem.Graphics.untex_shader.id, "color", color)
+	SetUniform(Mem.Graphics.untex_shader.id, "pos", pos)
+	SetUniform(Mem.Graphics.untex_shader.id, "size", size)
+	SetUniform(Mem.Graphics.untex_shader.id, "res", GetResolution())
+	SetUniform(Mem.Graphics.untex_shader.id, "cam_pos", Mem.Graphics.camera)
+
+	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
 	gl.BindVertexArray(0)
 
@@ -308,3 +302,25 @@ DrawRectangle :: proc(pos: [2]f32, size: [2]f32, color: [4]f32) {
 		// TODO(violeta): Arena draw queue
 	}
 }
+
+DrawTexture :: proc(tex: Texture, pos: [2]f32, scale: f32 = 1, color: [4]f32 = WHITE) {
+	UseTexture(tex)
+	UseShader(Mem.Graphics.tex_shader)
+
+	SetUniform(Mem.Graphics.tex_shader.id, "tex0", 0)
+	SetUniform(Mem.Graphics.tex_shader.id, "color", color)
+	SetUniform(Mem.Graphics.tex_shader.id, "pos", pos)
+	SetUniform(
+		Mem.Graphics.tex_shader.id,
+		"size",
+		[2]f32{cast(f32)tex.w * scale, cast(f32)tex.h * scale},
+	)
+	SetUniform(Mem.Graphics.tex_shader.id, "res", GetResolution())
+	SetUniform(Mem.Graphics.tex_shader.id, "cam_pos", Mem.Graphics.camera)
+
+	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
+	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
+	gl.BindVertexArray(0)
+}
+
+Camera :: [2]f32
