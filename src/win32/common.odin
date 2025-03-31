@@ -116,9 +116,9 @@ Audio :: proc() -> ^AudioBuffer {return &Mem.Audio}
 Delta :: proc() -> f32 {return Mem.Timing.delta}
 
 GraphicsBuffer :: struct {
-	tex_shader, untex_shader: Shader,
-	square_mesh:              Mesh,
-	camera:                   Camera,
+	tex_shader, untex_shader, font_shader: Shader,
+	square_mesh:                           Mesh,
+	camera:                                Camera,
 }
 
 @(export)
@@ -172,6 +172,9 @@ GameEngineInit :: proc() {
 	if shader, ok := NewShader("", "textured.frag"); ok {
 		Mem.Graphics.tex_shader = shader
 	}
+	if shader, ok := NewShader("", "font.frag"); ok {
+		Mem.Graphics.font_shader = shader
+	}
 	Mem.Graphics.camera = Camera{0, 0}
 
 	Mem.LoadData()
@@ -188,10 +191,17 @@ GameEngineUpdate :: proc() {
 		if Input().keys[Key.F11] == .JustPressed do Fullscreen(Mem.Window.window)
 		if Input().keys[Key.Esc] == .JustPressed do Mem.Window.running = false
 
+		for k, i in Input().keys do if k != .Released {
+			fmt.println("Key", i, "was", k)
+		}
+
 		if err := ReloadShader(&Mem.Graphics.tex_shader); err != nil {
 			fmt.println("Shader Reload Error:", err)
 		}
 		if err := ReloadShader(&Mem.Graphics.untex_shader); err != nil {
+			fmt.println("Shader Reload Error:", err)
+		}
+		if err := ReloadShader(&Mem.Graphics.font_shader); err != nil {
 			fmt.println("Shader Reload Error:", err)
 		}
 	}

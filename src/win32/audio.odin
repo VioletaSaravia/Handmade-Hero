@@ -75,27 +75,27 @@ ShutdownAudio :: proc(audio: ^AudioBuffer) {
 	for &s in audio.sounds do _ = ma.decoder_uninit(&s.decoder)
 }
 
-SoundType :: enum {
+PlaybackType :: enum {
 	oneshot,
 	looping,
 	held,
 }
 
-SoundSource :: union {
+SoundType :: union {
 	ma.waveform,
-	ma.device,
+	ma.decoder,
 }
 
 Sound :: struct {
 	data:    []byte, // TODO: Innecesario?
 	volume:  f32, // [0; 1]
 	pan:     f32, // [-1; 1]
-	type:    SoundType,
+	type:    PlaybackType,
 	playing: bool,
 	decoder: ma.decoder,
 }
 
-LoadSound :: proc($path: string, type: SoundType = .oneshot) -> (result: Sound) {
+LoadSound :: proc($path: string, type: PlaybackType = .oneshot) -> (result: Sound) {
 	result = {
 		data   = #load(DATA + path, []byte),
 		volume = 1.0,

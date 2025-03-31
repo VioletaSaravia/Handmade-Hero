@@ -2,6 +2,7 @@ package engine
 
 import fmt "core:fmt"
 import os "core:os"
+import fp "core:path/filepath"
 import s "core:strings"
 import win "core:sys/windows"
 
@@ -150,6 +151,14 @@ SetUniform1f :: proc(id: u32, name: string, value: f32) {
 	gl.Uniform1f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value)
 }
 
+SetUniforms1f :: proc(id: u32, name: string, value: []f32) {
+	gl.Uniform1fv(
+		gl.GetUniformLocation(id, auto_cast raw_data(name)),
+		auto_cast len(value),
+		raw_data(value),
+	)
+}
+
 SetUniform2fv :: proc(id: u32, name: string, value: [2]f32) {
 	gl.Uniform2f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value.x, value.y)
 }
@@ -172,6 +181,7 @@ SetUniform :: proc {
 	SetUniform1i,
 	SetUniform2i,
 	SetUniform1f,
+	SetUniforms1f,
 	SetUniform2fv,
 	SetUniform3fv,
 	SetUniform4fv,
@@ -202,7 +212,10 @@ NewTexture :: proc($path: string) -> (new: Texture) {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
 
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGB, new.w, new.h, 0, gl.RGB, gl.UNSIGNED_BYTE, img)
+
+	format: u32 = fp.ext(path) == ".bmp" ? gl.RGB : gl.RGBA
+
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGB, new.w, new.h, 0, format, gl.UNSIGNED_BYTE, img)
 	gl.GenerateMipmap(gl.TEXTURE_2D)
 
 	stbi.image_free(img)
@@ -290,7 +303,6 @@ RectToDraw :: struct {
 
 DrawRectangle :: proc(pos: [2]f32, size: [2]f32, color: [4]f32) {
 	UseShader(Mem.Graphics.untex_shader)
-
 	SetUniform(Mem.Graphics.untex_shader.id, "color", color)
 	SetUniform(Mem.Graphics.untex_shader.id, "pos", pos)
 	SetUniform(Mem.Graphics.untex_shader.id, "size", size)
@@ -300,10 +312,6 @@ DrawRectangle :: proc(pos: [2]f32, size: [2]f32, color: [4]f32) {
 	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
 	gl.BindVertexArray(0)
-
-	for rect in RectDrawQueue {
-		// TODO(violeta): Arena draw queue
-	}
 }
 
 DrawTexture :: proc(tex: Texture, pos: [2]f32, scale: f32 = 1, color: [4]f32 = WHITE) {
@@ -313,13 +321,186 @@ DrawTexture :: proc(tex: Texture, pos: [2]f32, scale: f32 = 1, color: [4]f32 = W
 	SetUniform(Mem.Graphics.tex_shader.id, "tex0", 0)
 	SetUniform(Mem.Graphics.tex_shader.id, "color", color)
 	SetUniform(Mem.Graphics.tex_shader.id, "pos", pos)
-	SetUniform(
-		Mem.Graphics.tex_shader.id,
-		"size",
-		[2]f32{cast(f32)tex.w * scale, cast(f32)tex.h * scale},
-	)
+	SetUniform(Mem.Graphics.tex_shader.id, "size", [2]f32{cast(f32)tex.w, cast(f32)tex.h} * scale)
 	SetUniform(Mem.Graphics.tex_shader.id, "res", GetResolution())
 	SetUniform(Mem.Graphics.tex_shader.id, "cam_pos", Mem.Graphics.camera)
+
+	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
+	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
+	gl.BindVertexArray(0)
+}
+
+Font :: struct {
+	tex:   Texture,
+	count: [2]f32,
+	size:  [2]f32,
+}
+
+BitmapCharmap := [256]f32 {
+	' '  = 0,
+	'A'  = 1,
+	'B'  = 2,
+	'C'  = 3,
+	'D'  = 4,
+	'E'  = 5,
+	'F'  = 6,
+	'G'  = 7,
+	'H'  = 8,
+	'I'  = 9,
+	'J'  = 10,
+	'K'  = 11,
+	'L'  = 12,
+	'M'  = 13,
+	'N'  = 14,
+	'O'  = 15,
+	'P'  = 16,
+	'Q'  = 17,
+	'R'  = 18,
+	'S'  = 19,
+	'T'  = 20,
+	'U'  = 21,
+	'V'  = 22,
+	'W'  = 23,
+	'X'  = 24,
+	'Y'  = 25,
+	'Z'  = 26,
+	'?'  = 27,
+	'!'  = 28,
+	'.'  = 29,
+	','  = 30,
+	'-'  = 31,
+	'+'  = 32,
+	'a'  = 32 + 1,
+	'b'  = 32 + 2,
+	'c'  = 32 + 3,
+	'd'  = 32 + 4,
+	'e'  = 32 + 5,
+	'f'  = 32 + 6,
+	'g'  = 32 + 7,
+	'h'  = 32 + 8,
+	'i'  = 32 + 9,
+	'j'  = 32 + 10,
+	'k'  = 32 + 11,
+	'l'  = 32 + 12,
+	'm'  = 32 + 13,
+	'n'  = 32 + 14,
+	'o'  = 32 + 15,
+	'p'  = 32 + 16,
+	'q'  = 32 + 17,
+	'r'  = 32 + 18,
+	's'  = 32 + 19,
+	't'  = 32 + 20,
+	'u'  = 32 + 21,
+	'v'  = 32 + 22,
+	'w'  = 32 + 23,
+	'x'  = 32 + 24,
+	'y'  = 32 + 25,
+	'z'  = 32 + 26,
+	':'  = 32 + 27,
+	';'  = 32 + 28,
+	'"'  = 32 + 29,
+	'('  = 32 + 30,
+	')'  = 32 + 31,
+	'@'  = 64,
+	'&'  = 64 + 1,
+	'1'  = 64 + 2,
+	'2'  = 64 + 3,
+	'3'  = 64 + 4,
+	'4'  = 64 + 5,
+	'5'  = 64 + 6,
+	'6'  = 64 + 7,
+	'7'  = 64 + 8,
+	'8'  = 64 + 9,
+	'9'  = 64 + 10,
+	'0'  = 64 + 11,
+	'%'  = 64 + 12,
+	'^'  = 64 + 13,
+	'*'  = 64 + 14,
+	'{'  = 64 + 15,
+	'}'  = 64 + 16,
+	'='  = 64 + 17,
+	'#'  = 64 + 18,
+	'/'  = 64 + 19,
+	'\\' = 64 + 20,
+	'$'  = 64 + 21,
+	'£'  = 64 + 22,
+	'['  = 64 + 23,
+	']'  = 64 + 24,
+	'<'  = 64 + 25,
+	'>'  = 64 + 26,
+	'\'' = 64 + 27,
+	'`'  = 64 + 28,
+	'~'  = 64 + 29,
+}
+
+Anchor :: enum {
+	TopLeft,
+	TopRight,
+	BotLeft,
+	BotRight,
+	Center,
+	CenterLeft,
+	CenterRight,
+	CenterTop,
+	CenterBot,
+}
+
+DrawText :: proc(
+	font: Font,
+	text: string,
+	pos: [2]f32 = {0, 0},
+	anchor: Anchor = .TopLeft,
+	columns: f32 = 1,
+	scale: f32 = 1,
+	color: [4]f32 = WHITE,
+) {
+	UseTexture(font.tex)
+	UseShader(Mem.Graphics.font_shader)
+	id := Mem.Graphics.font_shader.id
+
+	n_letters: [512]f32
+	for l, i in text {
+		if i >= 512 do break
+		n_letters[i] = BitmapCharmap[l]
+	}
+	SetUniform(id, "n_letters", n_letters[:])
+
+	text_size := [2]f32{auto_cast len(text) / columns, columns}
+	SetUniform(id, "text_size", text_size)
+
+	real_size := text_size * font.size * scale
+	SetUniform(id, "size", real_size)
+
+	adjusted_pos: [2]f32
+	switch anchor {
+	case .TopLeft:
+		adjusted_pos = pos
+	case .TopRight:
+		adjusted_pos = pos - {real_size.x, 0}
+	case .BotLeft:
+		adjusted_pos = pos - {0, real_size.y}
+	case .BotRight:
+		adjusted_pos = pos - {real_size.x, real_size.y}
+	case .Center:
+		adjusted_pos = pos - real_size / 2
+	case .CenterLeft:
+		adjusted_pos = pos - {0, real_size.y / 2}
+	case .CenterRight:
+		adjusted_pos = pos - {real_size.x, real_size.y / 2}
+	case .CenterTop:
+		adjusted_pos = pos - {real_size.x / 2, 0}
+	case .CenterBot:
+		adjusted_pos = pos - {real_size.x / 2, real_size.y}
+	}
+	SetUniform(id, "pos", adjusted_pos)
+
+	SetUniform(id, "tex0", 0)
+	SetUniform(id, "color", color)
+	SetUniform(id, "res", GetResolution())
+	SetUniform(id, "cam_pos", Mem.Graphics.camera)
+
+	SetUniform(id, "font_count", font.count * font.size)
+	SetUniform(id, "font_size", font.size)
 
 	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
