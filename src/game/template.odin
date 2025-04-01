@@ -7,28 +7,29 @@ import gl "vendor:OpenGL"
 
 s: ^GameState
 GameState :: struct {
-	player_pos: e.v2,
+	player_pos: [2]f32,
 	imgs:       [2]e.Image,
 	mouse:      e.Texture,
-	box:        e.Texture,
+	box:        e.Tileset,
 	font:       e.Font,
 }
 
+TILE_SIZE :: 24
+
 @(export)
 GameSetup :: proc() {
-	tile_size: i32 = 24
 	e.Settings(
 		{
 			name = "Test",
 			version = "0.1",
-			resolution = {tile_size * 34, tile_size * 25},
+			resolution = {TILE_SIZE * 34, TILE_SIZE * 25},
 			fullscreen = false,
 			memory = size_of(GameState),
 		},
 	)
 
 	e.Mem.LoadData = proc() {
-		s = auto_cast e.GetUserMemory(0)
+		s = auto_cast e.GetMemory(0)
 	}
 }
 
@@ -36,8 +37,8 @@ GameSetup :: proc() {
 GameInit :: proc() {
 	s.imgs[0], _ = e.LoadImage("door.bmp")
 	s.mouse = e.NewTexture("pointer.png")
-	s.box = e.NewTexture("box.bmp")
 
+	s.box = e.Tileset{e.NewTexture("box.bmp"), {3, 3}, {24, 24}}
 	s.font = e.Font{e.NewTexture("fonts/precise_3x.png"), {32, 3}, {8, 8}}
 
 	e.Audio().sounds[0] = e.LoadSound("kick.wav")
@@ -68,10 +69,12 @@ GameDraw :: proc() {
 
 	e.DrawText(
 		s.font,
-		str.concatenate({"Violeta Engine ", e.Mem.Settings.version}),
+		"Violeta Engine v0.1",
 		pos = {auto_cast e.GetResolution().x / 2, 24},
 		anchor = .CenterTop,
 		scale = 2,
+		columns = 19,
 	)
+	e.DrawBox(s.box, {0, 0}, {3, 3}, .TopLeft, 1)
 	e.DrawTexture(s.mouse, e.GetMouse())
 }

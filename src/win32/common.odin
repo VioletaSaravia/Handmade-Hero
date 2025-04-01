@@ -6,27 +6,31 @@ import "core:mem"
 import win "core:sys/windows"
 import gl "vendor:OpenGL"
 
-v2 :: [2]f32
-v3 :: [3]f32
-v2i :: [2]i32
+DATA :: "../../data/" // TODO(violeta): arruina el linter: when ODIN_DEBUG else "data/"
+
+Input :: proc() -> ^InputBuffer {return &Mem.Input}
+Audio :: proc() -> ^AudioBuffer {return &Mem.Audio}
+Delta :: proc() -> f32 {return Mem.Timing.delta}
+GetMemory :: proc(offset: uint) -> rawptr {return auto_cast raw_data(Mem.GameMemory[:])}
+
+Mem: ^Memory
+Memory :: struct {
+	LoadData:   proc(),
+	Settings:   GameSettings,
+	Input:      InputBuffer,
+	Timing:     TimingBuffer,
+	Window:     WindowBuffer,
+	Audio:      AudioBuffer,
+	Graphics:   GraphicsBuffer,
+	GameMemory: [1]byte, // TODO(violeta): Mmmhh
+}
 
 GameSettings :: struct {
 	name:       string,
 	version:    string,
-	resolution: v2i,
+	resolution: [2]i32,
 	fullscreen: bool,
-	memory:     uint,
-}
-
-DATA :: "../../data/" // TODO(violeta): arruina el linter: when ODIN_DEBUG else "data/"
-
-
-@(export)
-GameIsRunning :: proc() -> bool {return Mem.Window.running}
-
-
-InitMemory :: proc(size: uint) -> rawptr {
-	return win.VirtualAlloc(nil, size, win.MEM_COMMIT | win.MEM_RESERVE, win.PAGE_READWRITE)
+	memory:     int,
 }
 
 TimingBuffer :: struct {
@@ -37,6 +41,11 @@ TimingBuffer :: struct {
 	// Used by sleep()
 	desired_scheduler_ms: u32,
 	granular_sleep_on:    bool,
+}
+
+GraphicsBuffer :: struct {
+	tex_shader, untex_shader, font_shader: Shader,
+	square_mesh:                           Mesh,
 }
 
 InitTiming :: proc(refresh_rate: u32) -> (result: TimingBuffer, perf_count_freq: i64) {
@@ -99,32 +108,12 @@ TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
 	state.last_cycle_count = end_cycle_count
 }
 
-Mem: ^Memory
-Memory :: struct {
-	LoadData:   proc(),
-	Settings:   GameSettings,
-	Input:      InputBuffer,
-	Timing:     TimingBuffer,
-	Window:     WindowBuffer,
-	Audio:      AudioBuffer,
-	Graphics:   GraphicsBuffer,
-	GameMemory: [1]byte, // TODO(violeta): Mmmhh
-}
-
-Input :: proc() -> ^InputBuffer {return &Mem.Input}
-Audio :: proc() -> ^AudioBuffer {return &Mem.Audio}
-Delta :: proc() -> f32 {return Mem.Timing.delta}
-
-GraphicsBuffer :: struct {
-	tex_shader, untex_shader, font_shader: Shader,
-	square_mesh:                           Mesh,
-	camera:                                Camera,
-}
 
 @(export)
 GameGetMemory :: proc() -> rawptr {return Mem}
 
-GetUserMemory :: proc(offset: uint) -> rawptr {return auto_cast raw_data(Mem.GameMemory[:])}
+@(export)
+GameIsRunning :: proc() -> bool {return Mem.Window.running}
 
 @(export)
 GameReloadMemory :: proc(memory: rawptr) {
@@ -149,7 +138,8 @@ GameLoad :: proc(setup, init, update, draw: proc()) {
 }
 
 Settings :: proc(settings: GameSettings) {
-	if Mem = auto_cast (InitMemory(settings.memory + size_of(Memory))); Mem == nil do return
+	ptr, _ := mem.alloc(settings.memory + size_of(Memory))
+	Mem = auto_cast ptr
 	Mem.Settings = settings
 }
 
@@ -175,7 +165,6 @@ GameEngineInit :: proc() {
 	if shader, ok := NewShader("", "font.frag"); ok {
 		Mem.Graphics.font_shader = shader
 	}
-	Mem.Graphics.camera = Camera{0, 0}
 
 	Mem.LoadData()
 	GameProcs.Init()

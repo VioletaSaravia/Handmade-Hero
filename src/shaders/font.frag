@@ -11,7 +11,7 @@ uniform vec2 font_count;
 uniform vec2 font_size;
 
 uniform vec2 text_size;
-uniform float n_letters[512];
+uniform float coords[512];
 
 void main() {
     vec2 cur_char;
@@ -20,7 +20,7 @@ void main() {
             modf(text_size.y * texCoord.y, cur_char.y) * font_size.y
         };
 
-    int cur_letter = int(n_letters[int(cur_char.y * text_size.x + cur_char.x)]);
+    int cur_letter = int(coords[int(cur_char.y * text_size.x + cur_char.x)]);
     int map_width = int(font_count.x / font_size.x);
     vec2 to_draw = {
             cur_letter % map_width,
@@ -31,5 +31,5 @@ void main() {
                 (to_draw.x * font_size.x + char_offset.x) / font_count.x,
                 (to_draw.y * font_size.y + char_offset.y) / font_count.y
             ));
-    FragColor = pixel == vec4(1, 1, 1, 1) ? vec4(0) : color;
+    FragColor = pixel; //== vec4(1, 1, 1, 1) ? vec4(0) : color;
 }

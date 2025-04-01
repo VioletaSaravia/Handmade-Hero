@@ -259,7 +259,7 @@ square_vertices := [?]f32{1, 1, 0, 1, 0, 1, -1, 0, 1, 1, -1, -1, 1, 0, 1, -1, 1,
 @(rodata)
 square_indices := [?]u32{0, 1, 3, 1, 2, 3}
 
-NewMeshFromData :: proc(vertices: []f32, indices: []u32) -> (new: Mesh) {
+NewMesh :: proc(vertices: []f32, indices: []u32) -> (new: Mesh) {
 	gl.GenBuffers(1, &new.ebo)
 	gl.GenBuffers(1, &new.vbo)
 	gl.GenVertexArrays(1, &new.vao)
@@ -291,23 +291,12 @@ NewMeshFromData :: proc(vertices: []f32, indices: []u32) -> (new: Mesh) {
 	return
 }
 
-NewMesh :: proc {
-	NewMeshFromData,
-}
-
-RectDrawQueue: [dynamic]RectToDraw
-RectToDraw :: struct {
-	pos, size: [2]f32,
-	color:     [4]f32,
-}
-
 DrawRectangle :: proc(pos: [2]f32, size: [2]f32, color: [4]f32) {
 	UseShader(Mem.Graphics.untex_shader)
 	SetUniform(Mem.Graphics.untex_shader.id, "color", color)
 	SetUniform(Mem.Graphics.untex_shader.id, "pos", pos)
 	SetUniform(Mem.Graphics.untex_shader.id, "size", size)
 	SetUniform(Mem.Graphics.untex_shader.id, "res", GetResolution())
-	SetUniform(Mem.Graphics.untex_shader.id, "cam_pos", Mem.Graphics.camera)
 
 	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
@@ -323,18 +312,19 @@ DrawTexture :: proc(tex: Texture, pos: [2]f32, scale: f32 = 1, color: [4]f32 = W
 	SetUniform(Mem.Graphics.tex_shader.id, "pos", pos)
 	SetUniform(Mem.Graphics.tex_shader.id, "size", [2]f32{cast(f32)tex.w, cast(f32)tex.h} * scale)
 	SetUniform(Mem.Graphics.tex_shader.id, "res", GetResolution())
-	SetUniform(Mem.Graphics.tex_shader.id, "cam_pos", Mem.Graphics.camera)
 
 	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
 	gl.BindVertexArray(0)
 }
 
-Font :: struct {
+Tileset :: struct {
 	tex:   Texture,
 	count: [2]f32,
 	size:  [2]f32,
 }
+
+Font :: Tileset
 
 BitmapCharmap := [256]f32 {
 	' '  = 0,
@@ -454,21 +444,72 @@ DrawText :: proc(
 	scale: f32 = 1,
 	color: [4]f32 = WHITE,
 ) {
-	UseTexture(font.tex)
-	UseShader(Mem.Graphics.font_shader)
-	id := Mem.Graphics.font_shader.id
 
 	n_letters: [512]f32
 	for l, i in text {
 		if i >= 512 do break
 		n_letters[i] = BitmapCharmap[l]
 	}
-	SetUniform(id, "n_letters", n_letters[:])
 
-	text_size := [2]f32{auto_cast len(text) / columns, columns}
-	SetUniform(id, "text_size", text_size)
+	DrawTiles(font, n_letters[:], pos, anchor, {columns, f32(len(text)) / columns}, scale, color)
+}
 
-	real_size := text_size * font.size * scale
+DrawBox :: proc(
+	tileset: Tileset,
+	pos: [2]f32 = {0, 0},
+	size: [2]f32,
+	anchor: Anchor = .TopLeft,
+	scale: f32 = 1,
+) {
+	coords := make([]f32, int(size.x * size.y))
+	for i in 0 ..< size.x * size.y {
+		// TODO: Por qué coords = x es válido???
+		switch i {
+		case 0:
+			coords[i32(i)] = 0
+		case size.x * size.y - 1:
+			coords[i32(i)] = 8
+		case size.x * (size.y - 1):
+			coords[i32(i)] = 6
+		case size.x * (size.y - 1) + 1 ..< size.x * size.y:
+			coords[i32(i)] = 7
+		case 1 ..< size.x - 1:
+			coords[i32(i)] = 1
+		case size.x - 1:
+			coords[i32(i)] = 2
+		case:
+			if (i32(i) % i32(size.x)) == 0 {
+				coords[i32(i)] = 3
+			} else if (i32(i) % i32(size.x) - 1) == 0 {
+				coords[i32(i)] = 5
+			} else {
+				coords[i32(i)] = 4
+			}
+
+		}
+	}
+
+	DrawTiles(tileset, coords[:], pos, anchor, size.x, scale)
+}
+
+DrawTiles :: proc(
+	font: Tileset,
+	coords: []f32,
+	pos: [2]f32 = {0, 0},
+	anchor: Anchor = .TopLeft,
+	size: [2]f32,
+	scale: f32 = 1,
+	color: [4]f32 = WHITE,
+) {
+	UseTexture(font.tex)
+	UseShader(Mem.Graphics.font_shader)
+	id := Mem.Graphics.font_shader.id
+
+	SetUniform(id, "coords", coords)
+
+	SetUniform(id, "text_size", size)
+
+	real_size := size * font.size * scale
 	SetUniform(id, "size", real_size)
 
 	adjusted_pos: [2]f32
@@ -497,7 +538,6 @@ DrawText :: proc(
 	SetUniform(id, "tex0", 0)
 	SetUniform(id, "color", color)
 	SetUniform(id, "res", GetResolution())
-	SetUniform(id, "cam_pos", Mem.Graphics.camera)
 
 	SetUniform(id, "font_count", font.count * font.size)
 	SetUniform(id, "font_size", font.size)
