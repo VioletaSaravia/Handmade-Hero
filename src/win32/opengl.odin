@@ -292,11 +292,11 @@ NewMesh :: proc(vertices: []f32, indices: []u32) -> (new: Mesh) {
 }
 
 DrawRectangle :: proc(pos: [2]f32, size: [2]f32, color: [4]f32) {
-	UseShader(Mem.Graphics.untex_shader)
-	SetUniform(Mem.Graphics.untex_shader.id, "color", color)
-	SetUniform(Mem.Graphics.untex_shader.id, "pos", pos)
-	SetUniform(Mem.Graphics.untex_shader.id, "size", size)
-	SetUniform(Mem.Graphics.untex_shader.id, "res", GetResolution())
+	UseShader(Mem.Graphics.shaders[.Untextured])
+	SetUniform(Mem.Graphics.shaders[.Untextured].id, "color", color)
+	SetUniform(Mem.Graphics.shaders[.Untextured].id, "pos", pos)
+	SetUniform(Mem.Graphics.shaders[.Untextured].id, "size", size)
+	SetUniform(Mem.Graphics.shaders[.Untextured].id, "res", GetResolution())
 
 	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
@@ -305,13 +305,17 @@ DrawRectangle :: proc(pos: [2]f32, size: [2]f32, color: [4]f32) {
 
 DrawTexture :: proc(tex: Texture, pos: [2]f32, scale: f32 = 1, color: [4]f32 = WHITE) {
 	UseTexture(tex)
-	UseShader(Mem.Graphics.tex_shader)
+	UseShader(Mem.Graphics.shaders[.Textured])
 
-	SetUniform(Mem.Graphics.tex_shader.id, "tex0", 0)
-	SetUniform(Mem.Graphics.tex_shader.id, "color", color)
-	SetUniform(Mem.Graphics.tex_shader.id, "pos", pos)
-	SetUniform(Mem.Graphics.tex_shader.id, "size", [2]f32{cast(f32)tex.w, cast(f32)tex.h} * scale)
-	SetUniform(Mem.Graphics.tex_shader.id, "res", GetResolution())
+	SetUniform(Mem.Graphics.shaders[.Textured].id, "tex0", 0)
+	SetUniform(Mem.Graphics.shaders[.Textured].id, "color", color)
+	SetUniform(Mem.Graphics.shaders[.Textured].id, "pos", pos)
+	SetUniform(
+		Mem.Graphics.shaders[.Textured].id,
+		"size",
+		[2]f32{cast(f32)tex.w, cast(f32)tex.h} * scale,
+	)
+	SetUniform(Mem.Graphics.shaders[.Textured].id, "res", GetResolution())
 
 	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
@@ -492,7 +496,7 @@ DrawBox :: proc(
 
 DrawTiles :: proc(
 	tileset: Tileset,
-	coords: []f32,
+	tilemap: []f32,
 	pos: [2]f32 = {0, 0},
 	anchor: Anchor = .TopLeft,
 	size: [2]f32 = {1, 1},
@@ -500,10 +504,10 @@ DrawTiles :: proc(
 	color: [4]f32 = 0,
 ) {
 	UseTexture(tileset.tex)
-	UseShader(Mem.Graphics.font_shader)
-	id := Mem.Graphics.font_shader.id
+	UseShader(Mem.Graphics.shaders[.Tiled])
+	id := Mem.Graphics.shaders[.Tiled].id
 
-	SetUniform(id, "coords", coords)
+	SetUniform(id, "coords", tilemap)
 
 	SetUniform(id, "map_size", size)
 
@@ -544,5 +548,3 @@ DrawTiles :: proc(
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
 	gl.BindVertexArray(0)
 }
-
-Camera :: [2]f32

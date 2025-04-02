@@ -15,7 +15,6 @@ GetMemory :: proc(offset: uint) -> rawptr {return auto_cast raw_data(Mem.GameMem
 
 Mem: ^Memory
 Memory :: struct {
-	LoadData:   proc(),
 	Settings:   GameSettings,
 	Input:      InputBuffer,
 	Timing:     TimingBuffer,
@@ -43,9 +42,16 @@ TimingBuffer :: struct {
 	granular_sleep_on:    bool,
 }
 
+Shaders :: enum {
+	Textured,
+	Untextured,
+	Tiled,
+	Font,
+}
+
 GraphicsBuffer :: struct {
-	tex_shader, untex_shader, font_shader: Shader,
-	square_mesh:                           Mesh,
+	shaders:     [Shaders]Shader,
+	square_mesh: Mesh,
 }
 
 InitTiming :: proc(refresh_rate: u32) -> (result: TimingBuffer, perf_count_freq: i64) {
@@ -118,7 +124,6 @@ GameIsRunning :: proc() -> bool {return Mem.Window.running}
 @(export)
 GameReloadMemory :: proc(memory: rawptr) {
 	Mem = auto_cast memory
-	Mem.LoadData()
 	gl.load_up_to(4, 6, win.gl_set_proc_address)
 }
 
@@ -157,16 +162,18 @@ GameEngineInit :: proc() {
 	if Mem.Settings.fullscreen do Fullscreen(Mem.Window.window)
 
 	if shader, ok := NewShader("", ""); ok {
-		Mem.Graphics.untex_shader = shader
+		Mem.Graphics.shaders[.Untextured] = shader
 	}
 	if shader, ok := NewShader("", "textured.frag"); ok {
-		Mem.Graphics.tex_shader = shader
+		Mem.Graphics.shaders[.Textured] = shader
+	}
+	if shader, ok := NewShader("", "tiled.frag"); ok {
+		Mem.Graphics.shaders[.Tiled] = shader
 	}
 	if shader, ok := NewShader("", "font.frag"); ok {
-		Mem.Graphics.font_shader = shader
+		Mem.Graphics.shaders[.Font] = shader
 	}
 
-	Mem.LoadData()
 	GameProcs.Init()
 }
 
@@ -184,14 +191,10 @@ GameEngineUpdate :: proc() {
 			fmt.println("Key", i, "was", k)
 		}
 
-		if err := ReloadShader(&Mem.Graphics.tex_shader); err != nil {
-			fmt.println("Shader Reload Error:", err)
-		}
-		if err := ReloadShader(&Mem.Graphics.untex_shader); err != nil {
-			fmt.println("Shader Reload Error:", err)
-		}
-		if err := ReloadShader(&Mem.Graphics.font_shader); err != nil {
-			fmt.println("Shader Reload Error:", err)
+		for &s in Mem.Graphics.shaders {
+			if err := ReloadShader(&s); err != nil {
+				fmt.println("Shader Reload Error:", err)
+			}
 		}
 	}
 

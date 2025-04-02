@@ -13,6 +13,7 @@ GameState :: struct {
 	ship:       e.Texture,
 	box:        e.Tileset,
 	font:       e.Font,
+	font_bold:  e.Font,
 }
 
 TILE_SIZE :: 24
@@ -28,10 +29,10 @@ GameSetup :: proc() {
 			memory = size_of(GameState) * 5,
 		},
 	)
+}
 
-	e.Mem.LoadData = proc() {
-		s = auto_cast e.GetMemory(0)
-	}
+DebugReload :: proc() {
+	s = auto_cast e.GetMemory(0)
 }
 
 @(export)
@@ -42,6 +43,7 @@ GameInit :: proc() {
 
 	s.box = e.Tileset{e.NewTexture("box.bmp"), {3, 3}, {24, 24}}
 	s.font = e.Font{e.NewTexture("fonts/precise_3x.png"), {32, 3}, {8, 8}}
+	s.font_bold = e.Font{e.NewTexture("fonts/precise_3x_bold.png"), {32, 3}, {8, 8}}
 
 	e.Audio().sounds[0] = e.LoadSound("kick.wav")
 	e.Audio().sounds[1] = e.LoadSound("ambience.mp3", .looping)
@@ -49,6 +51,8 @@ GameInit :: proc() {
 
 @(export)
 GameUpdate :: proc() {
+	DebugReload()
+
 	if e.Input().keys['P'] == .JustPressed do e.PlaySound(&e.Audio().sounds[0])
 	if e.Input().keys['V'] >= .Pressed do e.Audio().sounds[0].pan -= (2 * e.Delta())
 	if e.Input().keys['B'] >= .Pressed do e.Audio().sounds[0].pan += (2 * e.Delta())
@@ -63,6 +67,8 @@ GameUpdate :: proc() {
 
 @(export)
 GameDraw :: proc() {
+	DebugReload()
+
 	e.ClearScreen({0.4, 0.3, 0.3})
 
 	for i in 0 ..< f32(10.0) {
@@ -70,7 +76,12 @@ GameDraw :: proc() {
 	}
 
 	set: [10]f32 = 0
-	e.DrawTiles(e.Tileset{tex = s.ship, count = {1, 1}, size = {32, 32}}, set[:], size = {10, 10})
+	e.DrawTiles(
+		e.Tileset{tex = s.ship, count = {1, 1}, size = {32, 32}},
+		set[:],
+		size = {10, 10},
+		scale = 2,
+	)
 
 	e.DrawText(
 		s.font,

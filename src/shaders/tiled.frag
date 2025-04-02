@@ -5,7 +5,6 @@ out vec4 FragColor;
 in vec2 texCoord;
 
 uniform sampler2D tex0;
-uniform sampler2D tex1; // bold
 uniform vec4 color;
 
 uniform vec2 tile_count;
@@ -33,5 +32,13 @@ void main() {
                 (to_draw.y * tile_size.y + char_offset.y) / tile_count.y
             ));
 
-    FragColor = pixel == vec4(1, 1, 1, 1) ? vec4(0) : color;
+    if (color.a == 0) {
+        // PNG rendering
+        if (pixel == vec4(0, 0, 0, 1)) discard;
+        FragColor = pixel;
+    }
+    else {
+        // Font rendering
+        FragColor = pixel == vec4(1, 1, 1, 1) ? vec4(0) : color;
+    }
 }
