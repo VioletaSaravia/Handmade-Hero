@@ -121,7 +121,6 @@ LoadSound :: proc($path: string, type: PlaybackType = .oneshot) -> (result: Soun
 	return
 }
 
-// TODO: Idea: play/pause/etc. overloads para anims, sonido, etc.
 PlaySound :: proc(sound: ^Sound) {
 	sound.playing = true
 	ma.decoder_seek_to_pcm_frame(&sound.decoder, 0)

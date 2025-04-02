@@ -32,10 +32,17 @@ GameSettings :: struct {
 	memory:     int,
 }
 
+Settings :: proc(settings: GameSettings) {
+	ptr, _ := mem.alloc(settings.memory + size_of(Memory))
+	Mem = auto_cast ptr
+	Mem.Settings = settings
+}
+
 TimingBuffer :: struct {
 	delta, target_spf:    f32,
 	last_counter:         i64,
 	last_cycle_count:     i64,
+	perf_count_freq:      i64,
 
 	// Used by sleep()
 	desired_scheduler_ms: u32,
@@ -54,8 +61,9 @@ GraphicsBuffer :: struct {
 	square_mesh: Mesh,
 }
 
-InitTiming :: proc(refresh_rate: u32) -> (result: TimingBuffer, perf_count_freq: i64) {
+InitTiming :: proc(refresh_rate: u32) -> (result: TimingBuffer) {
 	target_spf := 1.0 / (f32(refresh_rate))
+	perf_count_freq: i64
 	result = {
 		target_spf           = target_spf,
 		last_counter         = InitPerformanceCounter(&perf_count_freq),
@@ -64,6 +72,7 @@ InitTiming :: proc(refresh_rate: u32) -> (result: TimingBuffer, perf_count_freq:
 		desired_scheduler_ms = 1,
 		granular_sleep_on    = auto_cast win.timeBeginPeriod(1),
 	}
+	result.perf_count_freq = perf_count_freq
 
 	return
 }
@@ -92,16 +101,16 @@ TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
 	megacycles_per_frame := f64(cycles_elapsed) / (1000.0 * 1000.0)
 
 	state.delta =
-	auto_cast GetSecondsElapsed(Mem.Window.perf_count_freq, state.last_counter, GetWallClock())
+	auto_cast GetSecondsElapsed(state.perf_count_freq, state.last_counter, GetWallClock())
 	for state.delta < state.target_spf {
 		if state.granular_sleep_on do win.Sleep(u32(1000.0 * (state.target_spf - state.delta)))
 		state.delta =
-		auto_cast GetSecondsElapsed(Mem.Window.perf_count_freq, state.last_counter, GetWallClock())
+		auto_cast GetSecondsElapsed(state.perf_count_freq, state.last_counter, GetWallClock())
 	}
 
 	ms_per_frame := state.delta * 1000.0
 	ms_behind := (state.delta - state.target_spf) * 1000.0
-	fps := f64(screen.perf_count_freq) / f64(GetWallClock() - state.last_counter)
+	fps := f64(state.perf_count_freq) / f64(GetWallClock() - state.last_counter)
 
 	GameProcs.Draw()
 
@@ -142,11 +151,6 @@ GameLoad :: proc(setup, init, update, draw: proc()) {
 	GameProcs.Draw = draw
 }
 
-Settings :: proc(settings: GameSettings) {
-	ptr, _ := mem.alloc(settings.memory + size_of(Memory))
-	Mem = auto_cast ptr
-	Mem.Settings = settings
-}
 
 @(export)
 GameEngineInit :: proc() {
@@ -157,7 +161,7 @@ GameEngineInit :: proc() {
 	if ok = InitOpenGL(Mem.Window.window, &Mem.Settings); !ok do return
 	Mem.Graphics.square_mesh = NewMesh(square_vertices[:], square_indices[:])
 	if ok = InitAudio(&Mem.Audio); !ok do return
-	Mem.Timing, Mem.Window.perf_count_freq = InitTiming(Mem.Window.refresh_rate)
+	Mem.Timing = InitTiming(Mem.Window.refresh_rate)
 
 	if Mem.Settings.fullscreen do Fullscreen(Mem.Window.window)
 

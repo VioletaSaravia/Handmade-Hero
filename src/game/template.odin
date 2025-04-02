@@ -7,16 +7,15 @@ import gl "vendor:OpenGL"
 
 s: ^GameState
 GameState :: struct {
-	player_pos: [2]f32,
-	imgs:       [2]e.Image,
-	mouse:      e.Texture,
-	ship:       e.Texture,
-	box:        e.Tileset,
-	font:       e.Font,
-	font_bold:  e.Font,
+	imgs:      [2]e.Image,
+	mouse:     e.Texture,
+	ship:      e.Texture,
+	box:       e.Tileset,
+	font:      e.Font,
+	font_bold: e.Font,
 }
 
-TILE_SIZE :: 24
+TILE_SIZE :: 32
 
 @(export)
 GameSetup :: proc() {
@@ -24,9 +23,9 @@ GameSetup :: proc() {
 		{
 			name = "Test",
 			version = "0.1",
-			resolution = {TILE_SIZE * 34, TILE_SIZE * 25},
+			resolution = {TILE_SIZE * 40, TILE_SIZE * 24},
 			fullscreen = false,
-			memory = size_of(GameState) * 5,
+			memory = size_of(GameState),
 		},
 	)
 }
@@ -37,6 +36,8 @@ DebugReload :: proc() {
 
 @(export)
 GameInit :: proc() {
+	DebugReload()
+
 	s.imgs[0], _ = e.LoadImage("door.bmp")
 	s.mouse = e.NewTexture("pointer.png")
 	s.ship = e.NewTexture("ship.png")

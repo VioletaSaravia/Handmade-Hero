@@ -5,88 +5,14 @@ import win "core:sys/windows"
 import uc "core:unicode/utf16"
 import gl "vendor:OpenGL"
 
-ReadEntireFile :: proc(filename: ^string) -> (result: rawptr, ok: bool) {
-	handle := win.CreateFileW(
-		auto_cast filename,
-		win.GENERIC_READ,
-		0,
-		nil,
-		win.OPEN_EXISTING,
-		win.FILE_ATTRIBUTE_READONLY,
-		win.HANDLE{},
-	)
-
-	if handle == win.INVALID_HANDLE_VALUE {
-		return nil, false
-	}
-
-	size: win.LARGE_INTEGER
-	size_read: win.LARGE_INTEGER
-
-	if ok = auto_cast win.GetFileSizeEx(handle, &size); !ok || size == 0 {
-		return nil, false
-	}
-
-	result = win.VirtualAlloc(
-		nil,
-		auto_cast size,
-		win.MEM_COMMIT | win.MEM_RESERVE,
-		win.PAGE_READWRITE,
-	)
-
-	// TODO(violeta): Este auto_cast está bien?
-	if ok = auto_cast win.ReadFile(handle, result, auto_cast size, auto_cast &size_read, nil);
-	   !ok {
-		return nil, ok
-	}
-
-	win.CloseHandle(handle)
-
-	return result, size == size_read
-}
-
-// TODO(violeta): No testeado
-WriteEntireFile :: proc(filename: ^string, size: u32, memory: rawptr) -> (ok: bool) {
-	handle := win.CreateFileW(
-		auto_cast filename,
-		win.GENERIC_WRITE,
-		0,
-		nil,
-		win.CREATE_ALWAYS,
-		win.FILE_ATTRIBUTE_NORMAL,
-		nil,
-	)
-	if handle == win.INVALID_HANDLE_VALUE {
-		// LOG
-		return false
-	}
-
-	size_written: win.DWORD
-	ok = auto_cast win.WriteFile(handle, memory, size, &size_written, nil)
-
-	win.CloseHandle(handle)
-
-	if !ok || size_written != size {
-		// LOG
-		return false
-	}
-	return
-}
-
-FreeFileMemory :: proc(memory: rawptr) -> bool {
-	return auto_cast win.VirtualFree(memory, 0, win.MEM_RELEASE)
-}
-
-
 WindowBuffer :: struct {
 	running:         bool,
-	memory:          [^]byte, // Remove?
+	memory:          [^]byte,
 	w, h:            i32,
 	bytes_per_pixel: i32,
 	window:          win.HWND,
 	dc:              win.HDC,
 	refresh_rate:    u32,
-	perf_count_freq: i64,
 	info:            win.BITMAPINFO,
 }
 
@@ -220,7 +146,6 @@ InitWindow :: proc() -> (buffer: WindowBuffer, ok: bool) {
 		0,
 		window_class.lpszClassName,
 		auto_cast raw_data(Mem.Settings.name),
-		// TODO: Abstract into Mem.Window
 		win.WS_OVERLAPPED | win.WS_CAPTION | win.WS_SYSMENU | win.WS_MINIMIZEBOX | win.WS_VISIBLE,
 		win.CW_USEDEFAULT,
 		win.CW_USEDEFAULT,
@@ -250,11 +175,6 @@ GetMouse :: proc() -> [2]f32 {
 
 	rect: win.RECT
 	if ok := win.GetWindowRect(Mem.Window.window, &rect); !ok do fmt.println("")
-	// if ok := win.AdjustWindowRect(
-	// 	&rect,
-	// 	win.WS_OVERLAPPED | win.WS_CAPTION | win.WS_SYSMENU | win.WS_MINIMIZEBOX,
-	// 	win.FALSE,
-	// ); !ok {fmt.println("")}
 
 	return {f32(pt.x - rect.left - 8), f32(pt.y - rect.top - 31)}
 }
