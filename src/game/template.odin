@@ -10,6 +10,7 @@ GameState :: struct {
 	player_pos: [2]f32,
 	imgs:       [2]e.Image,
 	mouse:      e.Texture,
+	ship:       e.Texture,
 	box:        e.Tileset,
 	font:       e.Font,
 }
@@ -24,7 +25,7 @@ GameSetup :: proc() {
 			version = "0.1",
 			resolution = {TILE_SIZE * 34, TILE_SIZE * 25},
 			fullscreen = false,
-			memory = size_of(GameState),
+			memory = size_of(GameState) * 5,
 		},
 	)
 
@@ -37,6 +38,7 @@ GameSetup :: proc() {
 GameInit :: proc() {
 	s.imgs[0], _ = e.LoadImage("door.bmp")
 	s.mouse = e.NewTexture("pointer.png")
+	s.ship = e.NewTexture("ship.png")
 
 	s.box = e.Tileset{e.NewTexture("box.bmp"), {3, 3}, {24, 24}}
 	s.font = e.Font{e.NewTexture("fonts/precise_3x.png"), {32, 3}, {8, 8}}
@@ -67,6 +69,9 @@ GameDraw :: proc() {
 		e.DrawRectangle({125 + 30 * i, 80 + 30 * i}, {300, 200}, {1 / i, 1 / i, 1 / i, 1})
 	}
 
+	set: [10]f32 = 0
+	e.DrawTiles(e.Tileset{tex = s.ship, count = {1, 1}, size = {32, 32}}, set[:], size = {10, 10})
+
 	e.DrawText(
 		s.font,
 		"Violeta Engine v0.1",
@@ -75,6 +80,5 @@ GameDraw :: proc() {
 		scale = 2,
 		columns = 19,
 	)
-	e.DrawBox(s.box, {0, 0}, {3, 3}, .TopLeft, 1)
 	e.DrawTexture(s.mouse, e.GetMouse())
 }

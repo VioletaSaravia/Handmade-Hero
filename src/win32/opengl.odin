@@ -30,8 +30,8 @@ InitOpenGL :: proc(window: win.HWND, settings: ^GameSettings) -> (ok: bool = tru
 	win.wglMakeCurrent(window_dc, opengl_rc) or_return
 	gl.load_up_to(4, 6, win.gl_set_proc_address)
 
-	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
 	gl.Viewport(0, 0, settings.resolution.x, settings.resolution.y)
 	win.ReleaseDC(window, window_dc)
@@ -463,7 +463,6 @@ DrawBox :: proc(
 ) {
 	coords := make([]f32, int(size.x * size.y))
 	for i in 0 ..< size.x * size.y {
-		// TODO: Por qué coords = x es válido???
 		switch i {
 		case 0:
 			coords[i32(i)] = 0
@@ -485,7 +484,6 @@ DrawBox :: proc(
 			} else {
 				coords[i32(i)] = 4
 			}
-
 		}
 	}
 
@@ -493,23 +491,23 @@ DrawBox :: proc(
 }
 
 DrawTiles :: proc(
-	font: Tileset,
+	tileset: Tileset,
 	coords: []f32,
 	pos: [2]f32 = {0, 0},
 	anchor: Anchor = .TopLeft,
-	size: [2]f32,
+	size: [2]f32 = {1, 1},
 	scale: f32 = 1,
-	color: [4]f32 = WHITE,
+	color: [4]f32 = 0,
 ) {
-	UseTexture(font.tex)
+	UseTexture(tileset.tex)
 	UseShader(Mem.Graphics.font_shader)
 	id := Mem.Graphics.font_shader.id
 
 	SetUniform(id, "coords", coords)
 
-	SetUniform(id, "text_size", size)
+	SetUniform(id, "map_size", size)
 
-	real_size := size * font.size * scale
+	real_size := size * tileset.size * scale
 	SetUniform(id, "size", real_size)
 
 	adjusted_pos: [2]f32
@@ -539,8 +537,8 @@ DrawTiles :: proc(
 	SetUniform(id, "color", color)
 	SetUniform(id, "res", GetResolution())
 
-	SetUniform(id, "font_count", font.count * font.size)
-	SetUniform(id, "font_size", font.size)
+	SetUniform(id, "tile_count", tileset.count * tileset.size)
+	SetUniform(id, "tile_size", tileset.size)
 
 	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
