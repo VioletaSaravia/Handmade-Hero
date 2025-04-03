@@ -151,7 +151,6 @@ GameLoad :: proc(setup, init, update, draw: proc()) {
 	GameProcs.Draw = draw
 }
 
-
 @(export)
 GameEngineInit :: proc() {
 	GameProcs.Setup()
@@ -195,10 +194,8 @@ GameEngineUpdate :: proc() {
 			fmt.println("Key", i, "was", k)
 		}
 
-		for &s in Mem.Graphics.shaders {
-			if err := ReloadShader(&s); err != nil {
-				fmt.println("Shader Reload Error:", err)
-			}
+		for &s in Mem.Graphics.shaders do if err := ReloadShader(&s); err != nil {
+			fmt.println("Shader Reload Error:", err)
 		}
 	}
 

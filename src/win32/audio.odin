@@ -32,7 +32,7 @@ AudioDataCallback :: proc "c" (
 		read: u64
 		ma.decoder_read_pcm_frames(&s.decoder, &temp, auto_cast frame_count, &read)
 		if read == 0 {
-			// FIXME(viole): Skips a whole callback worth of frames at the worst.
+			// FIXME(viole): Se saltea un callback entero de frame como máximo.
 			s.playing = s.type != .looping ? false : true
 			ma.decoder_seek_to_pcm_frame(&s.decoder, 0)
 		}
@@ -87,7 +87,7 @@ SoundType :: union {
 }
 
 Sound :: struct {
-	data:    []byte, // TODO: Innecesario?
+	data:    []byte,
 	volume:  f32, // [0; 1]
 	pan:     f32, // [-1; 1]
 	type:    PlaybackType,

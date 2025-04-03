@@ -15,7 +15,7 @@ if "%1" == "release" (
         goto :loop
     )
 
-    odin build .\src\game -build-mode=dll -debug -pdb-name:build/debug/game_!PDB_NUMBER!.pdb -out:build/debug/game.dll
+    odin build .\src\apps -build-mode=dll -debug -pdb-name:build/debug/game_!PDB_NUMBER!.pdb -out:build/debug/game.dll
 
     handle build/debug/main.exe >nul 2>&1
     if %errorlevel% == 0 (

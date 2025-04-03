@@ -40,7 +40,6 @@ ControllerState :: struct {
 KEY_COUNT :: 256
 CONTROLLER_COUNT :: 4
 
-// TODO
 Key :: enum u8 {
 	Ret      = 0x0D,
 	Shift    = 0x10,

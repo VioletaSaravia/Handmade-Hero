@@ -36,7 +36,7 @@ DebugReload :: proc() {
 
 @(export)
 GameInit :: proc() {
-	DebugReload()
+	when ODIN_DEBUG do DebugReload()
 
 	s.imgs[0], _ = e.LoadImage("door.bmp")
 	s.mouse = e.NewTexture("pointer.png")
@@ -52,7 +52,7 @@ GameInit :: proc() {
 
 @(export)
 GameUpdate :: proc() {
-	DebugReload()
+	when ODIN_DEBUG do DebugReload()
 
 	if e.Input().keys['P'] == .JustPressed do e.PlaySound(&e.Audio().sounds[0])
 	if e.Input().keys['V'] >= .Pressed do e.Audio().sounds[0].pan -= (2 * e.Delta())
@@ -68,7 +68,7 @@ GameUpdate :: proc() {
 
 @(export)
 GameDraw :: proc() {
-	DebugReload()
+	when ODIN_DEBUG do DebugReload()
 
 	e.ClearScreen({0.4, 0.3, 0.3})
 
