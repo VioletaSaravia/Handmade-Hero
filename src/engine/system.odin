@@ -80,11 +80,11 @@ ResizeDIBSection :: proc(buffer: ^WindowBuffer, width, height: i32) {
 }
 
 
-GetResolution :: proc() -> [2]i32 {
+GetResolution :: proc() -> [2]f32 {
 	client_rect: win.RECT
 	win.GetClientRect(Mem.Window.window, &client_rect)
 
-	return {client_rect.right - client_rect.left, client_rect.bottom - client_rect.top}
+	return {f32(client_rect.right - client_rect.left), f32(client_rect.bottom - client_rect.top)}
 }
 
 ResizeWindow :: proc(hWnd: win.HWND, width, h: i32, fullscreen: bool = false) {
@@ -176,7 +176,7 @@ GetMouse :: proc() -> [2]f32 {
 	rect: win.RECT
 	if ok := win.GetWindowRect(Mem.Window.window, &rect); !ok do fmt.println("")
 
-	return {f32(pt.x - rect.left - 8), f32(pt.y - rect.top - 31)}
+	return {f32(pt.x - rect.left - 10), f32(pt.y - rect.top - 34)}
 }
 
 LockCursorToWindow :: proc(hWnd: win.HWND) {

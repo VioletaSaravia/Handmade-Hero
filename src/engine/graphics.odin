@@ -11,7 +11,7 @@ import stbi "vendor:stb/image"
 
 SHADER_PATH :: "../../src/shaders/" when ODIN_DEBUG else "shaders/"
 
-InitOpenGL :: proc(window: win.HWND, settings: ^GameSettings) -> (ok: bool = true) {
+InitOpenGL :: proc(window: win.HWND, settings: ^GameSettings) -> bool {
 	desired_pixel_format := win.PIXELFORMATDESCRIPTOR {
 		nSize      = size_of(win.PIXELFORMATDESCRIPTOR),
 		nVersion   = 1,
@@ -35,6 +35,21 @@ InitOpenGL :: proc(window: win.HWND, settings: ^GameSettings) -> (ok: bool = tru
 
 	gl.Viewport(0, 0, settings.resolution.x, settings.resolution.y)
 	win.ReleaseDC(window, window_dc)
+	return true
+}
+
+InitGraphics :: proc(
+	window: win.HWND,
+	settings: ^GameSettings,
+) -> (
+	new: GraphicsBuffer,
+	ok: bool = true,
+) {
+	InitOpenGL(window, settings) or_return
+
+	new.shaders[0] = NewShader("", "") or_return
+	new.square_mesh = NewMesh(square_vertices[:], square_indices[:])
+
 	return
 }
 
@@ -151,7 +166,7 @@ SetUniform1f :: proc(id: u32, name: string, value: f32) {
 	gl.Uniform1f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value)
 }
 
-SetUniforms1f :: proc(id: u32, name: string, value: []f32) {
+SetUniform1fv :: proc(id: u32, name: string, value: []f32) {
 	gl.Uniform1fv(
 		gl.GetUniformLocation(id, auto_cast raw_data(name)),
 		auto_cast len(value),
@@ -159,15 +174,15 @@ SetUniforms1f :: proc(id: u32, name: string, value: []f32) {
 	)
 }
 
-SetUniform2fv :: proc(id: u32, name: string, value: [2]f32) {
+SetUniform2f :: proc(id: u32, name: string, value: [2]f32) {
 	gl.Uniform2f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value.x, value.y)
 }
 
-SetUniform3fv :: proc(id: u32, name: string, value: [3]f32) {
+SetUniform3f :: proc(id: u32, name: string, value: [3]f32) {
 	gl.Uniform3f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value.x, value.y, value.z)
 }
 
-SetUniform4fv :: proc(id: u32, name: string, value: [4]f32) {
+SetUniform4f :: proc(id: u32, name: string, value: [4]f32) {
 	gl.Uniform4f(
 		gl.GetUniformLocation(id, auto_cast raw_data(name)),
 		value.x,
@@ -181,10 +196,10 @@ SetUniform :: proc {
 	SetUniform1i,
 	SetUniform2i,
 	SetUniform1f,
-	SetUniforms1f,
-	SetUniform2fv,
-	SetUniform3fv,
-	SetUniform4fv,
+	SetUniform1fv,
+	SetUniform2f,
+	SetUniform3f,
+	SetUniform4f,
 }
 
 Texture :: struct {
@@ -212,11 +227,10 @@ NewTexture :: proc($path: string) -> (new: Texture) {
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
 
-
 	format: u32 = fp.ext(path) == ".bmp" ? gl.RGB : gl.RGBA
 
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGB, new.w, new.h, 0, format, gl.UNSIGNED_BYTE, img)
-	gl.GenerateMipmap(gl.TEXTURE_2D)
+	gl.TexImage2D(gl.TEXTURE_2D, 0, i32(format), new.w, new.h, 0, format, gl.UNSIGNED_BYTE, img)
+	// gl.GenerateMipmap(gl.TEXTURE_2D)
 
 	stbi.image_free(img)
 
@@ -231,22 +245,6 @@ UseTexture :: proc(tex: Texture) {
 ClearScreen :: proc(color: [3]f32) {
 	gl.ClearColor(color.r, color.g, color.b, 1.0)
 	gl.Clear(gl.COLOR_BUFFER_BIT)
-}
-
-GuiButtonState :: enum {
-	Released,
-	Pressed,
-	Hovered,
-}
-
-GuiButton :: proc(pos: [2]u32, size: [2]u32) -> GuiButtonState {
-	m := transmute([2]u32)GetMouse()
-	hovered := pos.x < m.x && pos.x + size.x > m.x && pos.x < m.y && pos.y + size.y > m.y
-	pressed := Input().mouse.left == .Pressed
-
-	if hovered && pressed do return .Pressed
-	if hovered do return .Hovered
-	return .Released
 }
 
 Mesh :: struct {
@@ -291,44 +289,11 @@ NewMesh :: proc(vertices: []f32, indices: []u32) -> (new: Mesh) {
 	return
 }
 
-DrawRectangle :: proc(pos: [2]f32, size: [2]f32, color: [4]f32) {
-	UseShader(Mem.Graphics.shaders[.Untextured])
-	SetUniform(Mem.Graphics.shaders[.Untextured].id, "color", color)
-	SetUniform(Mem.Graphics.shaders[.Untextured].id, "pos", pos)
-	SetUniform(Mem.Graphics.shaders[.Untextured].id, "size", size)
-	SetUniform(Mem.Graphics.shaders[.Untextured].id, "res", GetResolution())
-
-	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
+DrawMesh :: proc(mesh: Mesh) {
+	gl.BindVertexArray(mesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
 	gl.BindVertexArray(0)
 }
-
-DrawTexture :: proc(tex: Texture, pos: [2]f32, scale: f32 = 1, color: [4]f32 = WHITE) {
-	UseTexture(tex)
-	UseShader(Mem.Graphics.shaders[.Textured])
-
-	SetUniform(Mem.Graphics.shaders[.Textured].id, "tex0", 0)
-	SetUniform(Mem.Graphics.shaders[.Textured].id, "color", color)
-	SetUniform(Mem.Graphics.shaders[.Textured].id, "pos", pos)
-	SetUniform(
-		Mem.Graphics.shaders[.Textured].id,
-		"size",
-		[2]f32{cast(f32)tex.w, cast(f32)tex.h} * scale,
-	)
-	SetUniform(Mem.Graphics.shaders[.Textured].id, "res", GetResolution())
-
-	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
-	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
-	gl.BindVertexArray(0)
-}
-
-Tileset :: struct {
-	tex:   Texture,
-	count: [2]f32,
-	size:  [2]f32,
-}
-
-Font :: Tileset
 
 BitmapCharmap := [256]f32 {
 	' '  = 0,
@@ -427,131 +392,7 @@ BitmapCharmap := [256]f32 {
 	'~'  = 64 + 29,
 }
 
-Anchor :: enum {
-	TopLeft,
-	TopRight,
-	BotLeft,
-	BotRight,
-	Center,
-	CenterLeft,
-	CenterRight,
-	CenterTop,
-	CenterBot,
-}
-
-DrawText :: proc(
-	font: Font,
-	text: string,
-	pos: [2]f32 = {0, 0},
-	anchor: Anchor = .TopLeft,
-	columns: f32 = 1,
-	scale: f32 = 1,
-	color: [4]f32 = WHITE,
-) {
-
-	n_letters: [512]f32
-	for l, i in text {
-		if i >= 512 do break
-		n_letters[i] = BitmapCharmap[l]
-	}
-
-	DrawTiles(font, n_letters[:], pos, anchor, {columns, f32(len(text)) / columns}, scale, color)
-}
-
-DrawBox :: proc(
-	tileset: Tileset,
-	pos: [2]f32 = {0, 0},
-	size: [2]f32,
-	anchor: Anchor = .TopLeft,
-	scale: f32 = 1,
-) {
-	coords := make([]f32, int(size.x * size.y))
-	for i in 0 ..< size.x * size.y {
-		switch i {
-		case 0:
-			coords[i32(i)] = 0
-		case size.x * size.y - 1:
-			coords[i32(i)] = 8
-		case size.x * (size.y - 1):
-			coords[i32(i)] = 6
-		case size.x * (size.y - 1) + 1 ..< size.x * size.y:
-			coords[i32(i)] = 7
-		case 1 ..< size.x - 1:
-			coords[i32(i)] = 1
-		case size.x - 1:
-			coords[i32(i)] = 2
-		case:
-			if (i32(i) % i32(size.x)) == 0 {
-				coords[i32(i)] = 3
-			} else if (i32(i) % i32(size.x) - 1) == 0 {
-				coords[i32(i)] = 5
-			} else {
-				coords[i32(i)] = 4
-			}
-		}
-	}
-
-	DrawTiles(tileset, coords[:], pos, anchor, size.x, scale)
-}
-
-DrawTiles :: proc(
-	tileset: Tileset,
-	tilemap: []f32,
-	pos: [2]f32 = {0, 0},
-	anchor: Anchor = .TopLeft,
-	size: [2]f32 = {1, 1},
-	scale: f32 = 1,
-	color: [4]f32 = 0,
-) {
-	UseTexture(tileset.tex)
-	UseShader(Mem.Graphics.shaders[.Tiled])
-	id := Mem.Graphics.shaders[.Tiled].id
-
-	SetUniform(id, "coords", tilemap)
-
-	SetUniform(id, "map_size", size)
-
-	real_size := size * tileset.size * scale
-	SetUniform(id, "size", real_size)
-
-	adjusted_pos: [2]f32
-	switch anchor {
-	case .TopLeft:
-		adjusted_pos = pos
-	case .TopRight:
-		adjusted_pos = pos - {real_size.x, 0}
-	case .BotLeft:
-		adjusted_pos = pos - {0, real_size.y}
-	case .BotRight:
-		adjusted_pos = pos - {real_size.x, real_size.y}
-	case .Center:
-		adjusted_pos = pos - real_size / 2
-	case .CenterLeft:
-		adjusted_pos = pos - {0, real_size.y / 2}
-	case .CenterRight:
-		adjusted_pos = pos - {real_size.x, real_size.y / 2}
-	case .CenterTop:
-		adjusted_pos = pos - {real_size.x / 2, 0}
-	case .CenterBot:
-		adjusted_pos = pos - {real_size.x / 2, real_size.y}
-	}
-	SetUniform(id, "pos", adjusted_pos)
-
-	SetUniform(id, "tex0", 0)
-	SetUniform(id, "color", color)
-	SetUniform(id, "res", GetResolution())
-
-	SetUniform(id, "tile_count", tileset.count * tileset.size)
-	SetUniform(id, "tile_size", tileset.size)
-
-	gl.BindVertexArray(Mem.Graphics.square_mesh.vao)
-	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
-	gl.BindVertexArray(0)
-}
-
-
 WHITE :: [4]f32{1, 1, 1, 1}
-BLACK :: [4]f32{0, 0, 0, 1}
 
 BMPColor :: struct #packed {
 	b, g, r, a: u8,
@@ -595,7 +436,7 @@ AseBMP32x32 :: struct #packed {
 	line_data:      [1024]byte,
 }
 
-Image :: []u8
+Image :: []byte
 
 LoadImage :: proc($path: string) -> (result: Image, ok: bool) {
 	data := raw_data(#load(DATA + path, []byte))

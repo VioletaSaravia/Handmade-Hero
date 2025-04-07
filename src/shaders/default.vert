@@ -5,7 +5,7 @@ layout(location = 1) in vec2 aTexCoord;
 
 out vec2 texCoord;
 
-uniform ivec2 res;
+uniform vec2 res;
 uniform vec2 pos;
 uniform vec2 size;
 

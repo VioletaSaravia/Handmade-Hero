@@ -1,10 +1,10 @@
 package main
 
-import game "../game"
-import engine "../win32"
+import app "../apps"
+import engine "../engine"
 
 main :: proc() {
-	engine.GameLoad(game.GameSetup, game.GameInit, game.GameUpdate, game.GameDraw)
+	engine.GameLoad(app.GameSetup, app.GameInit, app.GameUpdate, app.GameDraw)
 	engine.GameEngineInit()
 	for engine.GameIsRunning() do engine.GameEngineUpdate()
 	engine.GameEngineShutdown()

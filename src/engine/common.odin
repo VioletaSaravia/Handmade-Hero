@@ -10,6 +10,7 @@ DATA :: "../../data/" // TODO(violeta): arruina el linter: when ODIN_DEBUG else 
 
 Input :: proc() -> ^InputBuffer {return &Mem.Input}
 Audio :: proc() -> ^AudioBuffer {return &Mem.Audio}
+Graphics :: proc() -> ^GraphicsBuffer {return &Mem.Graphics}
 Delta :: proc() -> f32 {return Mem.Timing.delta}
 GetMemory :: proc(offset: uint) -> rawptr {return auto_cast raw_data(Mem.GameMemory[:])}
 
@@ -28,14 +29,13 @@ GameSettings :: struct {
 	name:       string,
 	version:    string,
 	resolution: [2]i32,
-	fullscreen: bool,
 	memory:     int,
 }
 
-Settings :: proc(settings: GameSettings) {
-	ptr, _ := mem.alloc(settings.memory + size_of(Memory))
+Settings :: proc(name: string, version: string, resolution: [2]i32, memory: int) {
+	ptr, _ := mem.alloc(memory + size_of(Memory))
 	Mem = auto_cast ptr
-	Mem.Settings = settings
+	Mem.Settings = {name, version, resolution, memory}
 }
 
 TimingBuffer :: struct {
@@ -49,15 +49,8 @@ TimingBuffer :: struct {
 	granular_sleep_on:    bool,
 }
 
-Shaders :: enum {
-	Textured,
-	Untextured,
-	Tiled,
-	Font,
-}
-
 GraphicsBuffer :: struct {
-	shaders:     [Shaders]Shader,
+	shaders:     [8]Shader,
 	square_mesh: Mesh,
 }
 
@@ -157,25 +150,11 @@ GameEngineInit :: proc() {
 
 	ok: bool
 	if Mem.Window, ok = InitWindow(); !ok do return
-	if ok = InitOpenGL(Mem.Window.window, &Mem.Settings); !ok do return
-	Mem.Graphics.square_mesh = NewMesh(square_vertices[:], square_indices[:])
+	if Mem.Graphics, ok = InitGraphics(Mem.Window.window, &Mem.Settings); !ok do return
 	if ok = InitAudio(&Mem.Audio); !ok do return
 	Mem.Timing = InitTiming(Mem.Window.refresh_rate)
 
-	if Mem.Settings.fullscreen do Fullscreen(Mem.Window.window)
-
-	if shader, ok := NewShader("", ""); ok {
-		Mem.Graphics.shaders[.Untextured] = shader
-	}
-	if shader, ok := NewShader("", "textured.frag"); ok {
-		Mem.Graphics.shaders[.Textured] = shader
-	}
-	if shader, ok := NewShader("", "tiled.frag"); ok {
-		Mem.Graphics.shaders[.Tiled] = shader
-	}
-	if shader, ok := NewShader("", "font.frag"); ok {
-		Mem.Graphics.shaders[.Font] = shader
-	}
+	if !ODIN_DEBUG do Fullscreen(Mem.Window.window)
 
 	GameProcs.Init()
 }
@@ -187,6 +166,7 @@ GameEngineUpdate :: proc() {
 	ProcessMouse(&Mem.Input)
 
 	when ODIN_DEBUG {
+		if Input().keys[Key.F12] == .JustPressed do GameProcs.Init()
 		if Input().keys[Key.F11] == .JustPressed do Fullscreen(Mem.Window.window)
 		if Input().keys[Key.Esc] == .JustPressed do Mem.Window.running = false
 

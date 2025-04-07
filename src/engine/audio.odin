@@ -47,7 +47,7 @@ AudioDataCallback :: proc "c" (
 	}
 }
 
-InitAudio :: proc(buffer: ^AudioBuffer) -> (ok: bool) {
+InitAudio :: proc(buffer: ^AudioBuffer) -> bool {
 	config := ma.device_config_init(.playback)
 	config.playback.format = AUDIO_FORMAT
 	config.playback.channels = AUDIO_CHANNELS
@@ -58,12 +58,12 @@ InitAudio :: proc(buffer: ^AudioBuffer) -> (ok: bool) {
 
 	if err := ma.device_init(nil, &config, &buffer.device); err != ma.result.SUCCESS {
 		fmt.println(err)
-		return
+		return false
 	}
 	if err := ma.device_start(&buffer.device); err != ma.result.SUCCESS {
 		fmt.println(err)
 		ma.device_uninit(&buffer.device)
-		return
+		return false
 	}
 
 	return true
