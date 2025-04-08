@@ -1,38 +1,34 @@
 package game
 
 import e "../engine"
+import csv "core:encoding/csv"
 import fmt "core:fmt"
+import alg "core:math/linalg"
+import rd "core:math/rand"
+import "core:strconv"
 import str "core:strings"
 import gl "vendor:OpenGL"
 
+TILES_X :: 30
+TILES_Y :: 20
+TILE :: 8
+SCALE :: 2
+
 s: ^GameState
 GameState :: struct {
-	imgs:        [2]e.Image,
-	mouse:       e.Texture,
-	tile_shader: e.Shader,
-	tilemap:     Tilemap,
+	imgs:           [2]e.Image,
+	layer1, layer2: e.Tilemap(TILES_X, TILES_Y),
+	ship:           e.Texture,
+	pos:            [2]f32,
+	textbox:        e.Tilemap(TILES_X - 2, 5),
 }
-
-Tilemap :: struct {
-	tileset:              e.Texture,
-	vao, vbo, ebo, i_vbo: u32,
-	tilemap:              [TILEMAP_Y][TILEMAP_X]i32,
-	instances:            [TILEMAP_X * TILEMAP_Y]TileInstance,
-}
-
-TileInstance :: struct {
-	pos: [2]f32,
-	idx: i32,
-}
-
-TILE_SIZE :: 32
 
 @(export)
 GameSetup :: proc() {
 	e.Settings(
 		name = "Test",
 		version = "0.1",
-		resolution = TILE_SIZE * {TILEMAP_X, TILEMAP_Y}, // 640 x 480
+		resolution = {TILE * TILES_X * SCALE, TILE * TILES_Y * SCALE},
 		memory = size_of(GameState),
 	)
 }
@@ -41,131 +37,70 @@ GameSetup :: proc() {
 GameInit :: proc() {
 	s = auto_cast e.GetMemory(0)
 
-	s.mouse = e.NewTexture("pointer.png")
-	s.tile_shader, _ = e.NewShader("tiled.vert", "")
-	s.tilemap.tileset = e.NewTexture("ship.png")
+	s.ship = e.NewTexture("ship.png")
+	s.textbox = e.NewTilemap("fonts/precise.png", TILES_X - 2, 5, {TILE, TILE})
+	s.layer1 = e.NewTilemap("micro_tileset.png", TILES_X, TILES_Y, {TILE, TILE})
+	s.layer2 = e.NewTilemap("micro_tileset.png", TILES_X, TILES_Y, {TILE, TILE})
 
-	quadVertices := [?]f32 {
-		0.0,
-		0.0,
-		0.0,
-		0.0, // bottom-left
-		1.0,
-		0.0,
-		1.0,
-		0.0, // bottom-right
-		1.0,
-		1.0,
-		1.0,
-		1.0, // top-right
-		0.0,
-		1.0,
-		0.0,
-		1.0, // top-left
-	}
-	indices := [?]i32{0, 1, 2, 2, 3, 0}
+	s.pos = {56, 16} * SCALE
 
-	gl.GenVertexArrays(1, &s.tilemap.vao)
-	gl.GenBuffers(1, &s.tilemap.vbo)
-	gl.GenBuffers(1, &s.tilemap.ebo)
-	gl.GenBuffers(1, &s.tilemap.i_vbo)
-	gl.BindVertexArray(s.tilemap.vao)
+	{
+		r: csv.Reader
+		r.reuse_record = true
+		r.reuse_record_buffer = true
+		defer csv.reader_destroy(&r)
 
-	gl.BindBuffer(gl.ARRAY_BUFFER, s.tilemap.vbo)
-	bla := size_of(f32) * len(quadVertices)
-	gl.BufferData(
-		gl.ARRAY_BUFFER,
-		size_of(f32) * len(quadVertices),
-		raw_data(quadVertices[:]),
-		gl.STATIC_DRAW,
-	)
+		layer1_data := #load(e.DATA + "layer1.csv")
+		csv.reader_init_with_string(&r, string(layer1_data))
 
-	gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, 4 * size_of(f32), uintptr(0))
-	gl.EnableVertexAttribArray(0)
-	gl.VertexAttribPointer(1, 2, gl.FLOAT, gl.FALSE, 4 * size_of(f32), uintptr(2 * size_of(f32)))
-	gl.EnableVertexAttribArray(1)
-
-
-	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, s.tilemap.ebo)
-	gl.BufferData(
-		gl.ELEMENT_ARRAY_BUFFER,
-		size_of(i32) * len(indices),
-		raw_data(indices[:]),
-		gl.STATIC_DRAW,
-	)
-
-	for y in 0 ..< TILEMAP_Y do for x in 0 ..< TILEMAP_X {
-		i := y * TILEMAP_X + x
-		s.tilemap.instances[i].pos = TILE_SIZE_X * {f32(x), f32(y)}
-		s.tilemap.instances[i].idx = s.tilemap.tilemap[y][x]
+		for r, i, err in csv.iterator_next(&r) {
+			if err != nil do break
+			for f, j in r {
+				fmt.printfln("Record %v, field %v: %q", i, j, f)
+				num := strconv.atoi(f)
+				s.layer1.instances[i * TILES_X + j].idx = auto_cast num if num != -1 else 0
+			}
+		}
 	}
 
-	gl.BindBuffer(gl.ARRAY_BUFFER, s.tilemap.i_vbo)
-	gl.BufferData(
-		gl.ARRAY_BUFFER,
-		size_of(TileInstance) * len(s.tilemap.instances),
-		raw_data(s.tilemap.instances[:]),
-		gl.DYNAMIC_DRAW,
-	)
+	{
+		r: csv.Reader
+		r.reuse_record = true
+		r.reuse_record_buffer = true
+		defer csv.reader_destroy(&r)
 
-	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, size_of(TileInstance), uintptr(0))
-	gl.EnableVertexAttribArray(2)
-	gl.VertexAttribDivisor(2, 1)
-	gl.VertexAttribIPointer(3, 1, gl.INT, size_of(TileInstance), uintptr(2 * size_of(f32)))
-	gl.EnableVertexAttribArray(3)
-	gl.VertexAttribDivisor(3, 1)
+		layer2_data := #load(e.DATA + "layer2.csv")
+		csv.reader_init_with_string(&r, string(layer2_data))
+
+		for r, i, err in csv.iterator_next(&r) {
+			if err != nil do break
+			for f, j in r {
+				fmt.printfln("Record %v, field %v: %q", i, j, f)
+				num := strconv.atoi(f)
+				s.layer2.instances[i * TILES_X + j].idx = auto_cast num if num != -1 else 0
+			}
+		}
+	}
 }
 
 @(export)
 GameUpdate :: proc() {
 	when ODIN_DEBUG do s = auto_cast e.GetMemory(0)
 
-	e.ReloadShader(&s.tile_shader)
+	if e.Input().keys['W'] == .JustPressed do s.pos.y -= TILE * SCALE
+	if e.Input().keys['S'] == .JustPressed do s.pos.y += TILE * SCALE
+	if e.Input().keys['A'] == .JustPressed do s.pos.x -= TILE * SCALE
+	if e.Input().keys['D'] == .JustPressed do s.pos.x += TILE * SCALE
 }
-
-TILEMAP_X :: 20
-TILEMAP_Y :: 15
-TILE_SIZE_X :: TILE_SIZE
-TILE_SIZE_Y :: TILE_SIZE
-TILESET_COLS :: 1
 
 @(export)
 GameDraw :: proc() {
-	when ODIN_DEBUG do s = auto_cast e.GetMemory(0)
-	e.ClearScreen({0.4, 0.3, 0.3})
+	// when ODIN_DEBUG do s = auto_cast e.GetMemory(0)
 
-	// tile shader setup
-	e.UseShader(s.tile_shader)
-	e.SetUniform(s.tile_shader.id, "tileSize", [2]f32{TILE_SIZE_X, TILE_SIZE_Y})
-	e.SetUniform(s.tile_shader.id, "tilesetCols", TILESET_COLS)
-	e.SetUniform(s.tile_shader.id, "screenSize", e.GetResolution())
-
-	gl.ActiveTexture(gl.TEXTURE0)
-	gl.BindTexture(gl.TEXTURE_2D, s.tilemap.tileset.id)
-	gl.BindVertexArray(s.tilemap.vao)
-
-	// on-the-fly tilemap updating
-	s.tilemap.instances[0].idx = 3
-	gl.BindBuffer(gl.ARRAY_BUFFER, s.tilemap.i_vbo)
-	gl.BufferSubData(
-		gl.ARRAY_BUFFER,
-		0,
-		size_of(TileInstance) * len(s.tilemap.instances),
-		raw_data(s.tilemap.instances[:]),
-	)
-
-	e.SetUniform(s.tile_shader.id, "tex0", 0)
-	gl.DrawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil, TILEMAP_X * TILEMAP_Y)
-
-	e.UseShader(e.Graphics().shaders[0])
-	e.SetUniform(e.Graphics().shaders[0].id, "res", e.GetResolution())
-	e.SetUniform(e.Graphics().shaders[0].id, "pos", e.GetMouse())
-	e.SetUniform(
-		e.Graphics().shaders[0].id,
-		"size",
-		[2]f32{cast(f32)s.mouse.w, cast(f32)s.mouse.h},
-	)
-	e.SetUniform(e.Graphics().shaders[0].id, "color", e.WHITE)
-	e.UseTexture(s.mouse)
-	e.DrawMesh(e.Graphics().square_mesh)
+	e.DrawTilemap(&s.layer2, scale = 4)
+	e.DrawTilemap(&s.layer1, scale = 4)
+	e.DrawTexture(s.ship, s.pos, SCALE)
+	e.DrawTexture(s.ship, s.pos + {1, 6} * TILE * SCALE, SCALE)
+	text := "With dusk approaching, the fleet decides to advance through the narrow rivers of the region."
+	e.DrawText(text, &s.textbox, {TILE, TILE * (TILES_Y - 1 - 5)}, 4)
 }

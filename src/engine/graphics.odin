@@ -47,8 +47,10 @@ InitGraphics :: proc(
 ) {
 	InitOpenGL(window, settings) or_return
 
-	new.shaders[0] = NewShader("", "") or_return
+	new.shaders[.Default] = NewShader("", "") or_return
+	new.shaders[.Tiled] = NewShader("tiled.vert", "") or_return
 	new.square_mesh = NewMesh(square_vertices[:], square_indices[:])
+	new.mouse = NewTexture("pointer.png")
 
 	return
 }
@@ -131,6 +133,7 @@ NewShader :: proc(vert_file: string, frag_file: string) -> (new: Shader, ok: boo
 
 UseShader :: proc(shader: Shader) {
 	gl.UseProgram(shader.id)
+	Graphics().active_shader = shader.id
 }
 
 ReloadShader :: proc(shader: ^Shader) -> os.Error {
@@ -154,37 +157,50 @@ ReloadShader :: proc(shader: ^Shader) -> os.Error {
 	return nil
 }
 
-SetUniform1i :: proc(id: u32, name: string, value: i32) {
-	gl.Uniform1i(gl.GetUniformLocation(id, auto_cast raw_data(name)), value)
+SetUniform1i :: proc(name: string, value: i32) {
+	gl.Uniform1i(gl.GetUniformLocation(Graphics().active_shader, auto_cast raw_data(name)), value)
 }
 
-SetUniform2i :: proc(id: u32, name: string, value: [2]i32) {
-	gl.Uniform2i(gl.GetUniformLocation(id, auto_cast raw_data(name)), value.x, value.y)
+SetUniform2i :: proc(name: string, value: [2]i32) {
+	gl.Uniform2i(
+		gl.GetUniformLocation(Graphics().active_shader, auto_cast raw_data(name)),
+		value.x,
+		value.y,
+	)
 }
 
-SetUniform1f :: proc(id: u32, name: string, value: f32) {
-	gl.Uniform1f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value)
+SetUniform1f :: proc(name: string, value: f32) {
+	gl.Uniform1f(gl.GetUniformLocation(Graphics().active_shader, auto_cast raw_data(name)), value)
 }
 
-SetUniform1fv :: proc(id: u32, name: string, value: []f32) {
+SetUniform1fv :: proc(name: string, value: []f32) {
 	gl.Uniform1fv(
-		gl.GetUniformLocation(id, auto_cast raw_data(name)),
+		gl.GetUniformLocation(Graphics().active_shader, auto_cast raw_data(name)),
 		auto_cast len(value),
 		raw_data(value),
 	)
 }
 
-SetUniform2f :: proc(id: u32, name: string, value: [2]f32) {
-	gl.Uniform2f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value.x, value.y)
+SetUniform2f :: proc(name: string, value: [2]f32) {
+	gl.Uniform2f(
+		gl.GetUniformLocation(Graphics().active_shader, auto_cast raw_data(name)),
+		value.x,
+		value.y,
+	)
 }
 
-SetUniform3f :: proc(id: u32, name: string, value: [3]f32) {
-	gl.Uniform3f(gl.GetUniformLocation(id, auto_cast raw_data(name)), value.x, value.y, value.z)
+SetUniform3f :: proc(name: string, value: [3]f32) {
+	gl.Uniform3f(
+		gl.GetUniformLocation(Graphics().active_shader, auto_cast raw_data(name)),
+		value.x,
+		value.y,
+		value.z,
+	)
 }
 
-SetUniform4f :: proc(id: u32, name: string, value: [4]f32) {
+SetUniform4f :: proc(name: string, value: [4]f32) {
 	gl.Uniform4f(
-		gl.GetUniformLocation(id, auto_cast raw_data(name)),
+		gl.GetUniformLocation(Graphics().active_shader, auto_cast raw_data(name)),
 		value.x,
 		value.y,
 		value.z,
@@ -242,8 +258,19 @@ UseTexture :: proc(tex: Texture) {
 	gl.BindTexture(gl.TEXTURE_2D, tex.id)
 }
 
-ClearScreen :: proc(color: [3]f32) {
-	gl.ClearColor(color.r, color.g, color.b, 1.0)
+DrawTexture :: proc(tex: Texture, pos: [2]f32 = {}, scale: f32 = 1) {
+	UseShader(Graphics().shaders[.Default])
+	SetUniform("res", GetResolution())
+	SetUniform("pos", pos)
+	SetUniform("scale", scale)
+	SetUniform("size", [2]f32{f32(tex.w), f32(tex.h)})
+	SetUniform("color", WHITE)
+	UseTexture(tex)
+	DrawMesh(Graphics().square_mesh)
+}
+
+ClearScreen :: proc(color: [4]f32 = 0) {
+	gl.ClearColor(color.r, color.g, color.b, color.a)
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 }
 
@@ -293,6 +320,108 @@ DrawMesh :: proc(mesh: Mesh) {
 	gl.BindVertexArray(mesh.vao)
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil)
 	gl.BindVertexArray(0)
+}
+
+Tilemap :: struct($x, $y: u32) {
+	tileset:              Texture,
+	tile_size:            [2]f32,
+	vao, vbo, ebo, i_vbo: u32,
+	instances:            [x * y]TileInstance,
+}
+
+TileInstance :: struct {
+	pos: [2]f32,
+	idx: i32,
+}
+
+
+@(rodata)
+quad_vertices := [?]f32{0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1}
+@(rodata)
+quad_indices := [?]i32{0, 1, 2, 2, 3, 0}
+
+NewTilemap :: proc($tileset_path: string, $x, $y: u32, tile_size: [2]f32) -> (new: Tilemap(x, y)) {
+	new.tileset = NewTexture(tileset_path)
+	new.tile_size = tile_size
+
+	gl.GenVertexArrays(1, &new.vao)
+	gl.GenBuffers(1, &new.vbo)
+	gl.GenBuffers(1, &new.ebo)
+	gl.GenBuffers(1, &new.i_vbo)
+	gl.BindVertexArray(new.vao)
+
+	gl.BindBuffer(gl.ARRAY_BUFFER, new.vbo)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		size_of(f32) * len(quad_vertices),
+		raw_data(quad_vertices[:]),
+		gl.STATIC_DRAW,
+	)
+
+	gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, 4 * size_of(f32), uintptr(0))
+	gl.EnableVertexAttribArray(0)
+	gl.VertexAttribPointer(1, 2, gl.FLOAT, gl.FALSE, 4 * size_of(f32), uintptr(2 * size_of(f32)))
+	gl.EnableVertexAttribArray(1)
+
+	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, new.ebo)
+	gl.BufferData(
+		gl.ELEMENT_ARRAY_BUFFER,
+		size_of(i32) * len(quad_indices),
+		raw_data(quad_indices[:]),
+		gl.STATIC_DRAW,
+	)
+
+	for iy in 0 ..< y do for ix in 0 ..< x {
+		i := iy * x + ix
+		new.instances[i].pos = [2]f32{new.tile_size.x * f32(ix), new.tile_size.y * f32(iy)}
+	}
+
+	gl.BindBuffer(gl.ARRAY_BUFFER, new.i_vbo)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		size_of(TileInstance) * len(new.instances),
+		raw_data(new.instances[:]),
+		gl.DYNAMIC_DRAW,
+	)
+
+	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, size_of(TileInstance), uintptr(0))
+	gl.EnableVertexAttribArray(2)
+	gl.VertexAttribDivisor(2, 1)
+
+	gl.VertexAttribIPointer(3, 1, gl.INT, size_of(TileInstance), uintptr(2 * size_of(f32)))
+	gl.EnableVertexAttribArray(3)
+	gl.VertexAttribDivisor(3, 1)
+
+	return
+}
+
+DrawTilemap :: proc(tilemap: ^Tilemap($x, $y), pos: [2]f32 = {}, scale: f32 = 2) {
+	UseShader(Graphics().shaders[.Tiled])
+	SetUniform("tile_size", tilemap.tile_size)
+	tileset_size := [2]i32 {
+		tilemap.tileset.w / i32(tilemap.tile_size.x),
+		tilemap.tileset.h / i32(tilemap.tile_size.y),
+	}
+	SetUniform("tileset_size", tileset_size)
+	SetUniform("res", GetResolution())
+	SetUniform("pos", pos)
+	SetUniform("scale", scale)
+	SetUniform("tex0", 0)
+
+	UseTexture(tilemap.tileset)
+
+	gl.BindVertexArray(tilemap.vao)
+
+	// on-the-fly tilemap updating
+	gl.BindBuffer(gl.ARRAY_BUFFER, tilemap.i_vbo)
+	gl.BufferSubData(
+		gl.ARRAY_BUFFER,
+		0,
+		size_of(TileInstance) * len(tilemap.instances),
+		raw_data(tilemap.instances[:]),
+	)
+
+	gl.DrawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil, len(tilemap.instances))
 }
 
 BitmapCharmap := [256]f32 {
@@ -391,6 +520,36 @@ BitmapCharmap := [256]f32 {
 	'`'  = 64 + 28,
 	'~'  = 64 + 29,
 }
+
+DrawText :: proc(text: string, tilemap: ^Tilemap($x, $y), pos: [2]f32 = {}, scale: f32 = 2) {
+	text_i, box_i, next_space: int
+	add_whitespace: bool
+	for text_i < len(text) && box_i < int(x * y) {
+		if !add_whitespace do for i in text_i ..< len(text) {
+			if text[i] == ' ' || (i == len(text) - 1) {
+				next_space = i - text_i
+				break
+			}
+		}
+
+		add_whitespace = u32(next_space) >= x - (auto_cast box_i % x)
+
+		tilemap.instances[box_i].idx =
+			auto_cast BitmapCharmap[text[text_i]] if !add_whitespace else 0
+
+		text_i += !add_whitespace ? 1 : 0
+		box_i += 1
+
+		add_whitespace = add_whitespace && ((box_i % auto_cast x) != 0)
+	}
+
+	if len(text) < int(x * y) {
+		for i in box_i ..< int(x * y) do tilemap.instances[i].idx = 0
+	}
+
+	DrawTilemap(tilemap, pos, scale)
+}
+
 
 WHITE :: [4]f32{1, 1, 1, 1}
 

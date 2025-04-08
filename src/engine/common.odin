@@ -30,12 +30,19 @@ GameSettings :: struct {
 	version:    string,
 	resolution: [2]i32,
 	memory:     int,
+	mouse:      bool,
 }
 
-Settings :: proc(name: string, version: string, resolution: [2]i32, memory: int) {
+Settings :: proc(
+	name: string,
+	version: string,
+	resolution: [2]i32 = {640, 480},
+	memory: int = 0,
+	mouse: bool = true,
+) {
 	ptr, _ := mem.alloc(memory + size_of(Memory))
 	Mem = auto_cast ptr
-	Mem.Settings = {name, version, resolution, memory}
+	Mem.Settings = {name, version, resolution, memory, mouse}
 }
 
 TimingBuffer :: struct {
@@ -49,9 +56,16 @@ TimingBuffer :: struct {
 	granular_sleep_on:    bool,
 }
 
+Shaders :: enum {
+	Default,
+	Tiled,
+}
+
 GraphicsBuffer :: struct {
-	shaders:     [8]Shader,
-	square_mesh: Mesh,
+	shaders:       [Shaders]Shader,
+	active_shader: u32,
+	square_mesh:   Mesh,
+	mouse:         Texture,
 }
 
 InitTiming :: proc(refresh_rate: u32) -> (result: TimingBuffer) {
@@ -93,19 +107,29 @@ TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
 	cycles_elapsed := end_cycle_count - state.last_cycle_count
 	megacycles_per_frame := f64(cycles_elapsed) / (1000.0 * 1000.0)
 
-	state.delta =
-	auto_cast GetSecondsElapsed(state.perf_count_freq, state.last_counter, GetWallClock())
+	state.delta = GetSecondsElapsed(state.perf_count_freq, state.last_counter, GetWallClock())
 	for state.delta < state.target_spf {
 		if state.granular_sleep_on do win.Sleep(u32(1000.0 * (state.target_spf - state.delta)))
-		state.delta =
-		auto_cast GetSecondsElapsed(state.perf_count_freq, state.last_counter, GetWallClock())
+		state.delta = GetSecondsElapsed(state.perf_count_freq, state.last_counter, GetWallClock())
 	}
 
 	ms_per_frame := state.delta * 1000.0
 	ms_behind := (state.delta - state.target_spf) * 1000.0
 	fps := f64(state.perf_count_freq) / f64(GetWallClock() - state.last_counter)
 
+	ClearScreen()
 	GameProcs.Draw()
+	if Mem.Settings.mouse {
+		UseShader(Graphics().shaders[.Default])
+		SetUniform("res", GetResolution())
+		SetUniform("pos", GetMouse())
+		SetUniform("scale", 1.0)
+		SetUniform("size", [2]f32{cast(f32)Graphics().mouse.w, cast(f32)Graphics().mouse.h})
+		SetUniform("color", WHITE)
+
+		UseTexture(Graphics().mouse)
+		DrawMesh(Graphics().square_mesh)
+	}
 
 	win.SwapBuffers(screen.dc)
 	win.ReleaseDC(screen.window, screen.dc)
@@ -173,10 +197,10 @@ GameEngineUpdate :: proc() {
 		for k, i in Input().keys do if k != .Released {
 			fmt.println("Key", i, "was", k)
 		}
+	}
 
-		for &s in Mem.Graphics.shaders do if err := ReloadShader(&s); err != nil {
-			fmt.println("Shader Reload Error:", err)
-		}
+	for &s in Mem.Graphics.shaders do if err := ReloadShader(&s); err != nil {
+		fmt.println("Shader Reload Error:", err)
 	}
 
 	GameProcs.Update()

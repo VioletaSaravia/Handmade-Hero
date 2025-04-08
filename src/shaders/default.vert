@@ -8,10 +8,11 @@ out vec2 texCoord;
 uniform vec2 res;
 uniform vec2 pos;
 uniform vec2 size;
+uniform float scale;
 
 void main() {
     vec2 pos_n = pos / res;
-    vec2 size_n = size / res;
+    vec2 size_n = scale * size / res;
 
     texCoord = aTexCoord;
 
