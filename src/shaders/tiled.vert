@@ -21,6 +21,11 @@ uniform float scale;
 uniform bool two_color;
 
 void main() {
+    if (instanceTile == -1) {
+        texCoord = vec2(0);
+        return;
+    }
+
     vec2 world_pos = pos + instancePos + aPos * tile_size;
     vec2 scale_px = vec2(scale / res.x, scale / res.y);
     vec2 ndc = world_pos * scale_px - vec2(1);

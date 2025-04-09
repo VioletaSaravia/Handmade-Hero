@@ -29,7 +29,7 @@ InitTiming :: proc(refresh_rate: u32) -> (result: TimingBuffer) {
 		target_spf           = target_spf,
 		last_counter         = InitPerformanceCounter(&perf_count_freq),
 		last_cycle_count     = intrinsics.read_cycle_counter(),
-		delta                = auto_cast target_spf,
+		delta                = target_spf,
 		desired_scheduler_ms = 1,
 		granular_sleep_on    = auto_cast win.timeBeginPeriod(1),
 	}
@@ -71,7 +71,6 @@ TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
 	ms_behind := (state.delta - state.target_spf) * 1000.0
 	fps := f64(state.perf_count_freq) / f64(GetWallClock() - state.last_counter)
 
-
 	// PRE-GAME DRAW
 	gl.BindFramebuffer(gl.FRAMEBUFFER, Graphics().post_shader.fbo)
 	ClearScreen()
@@ -98,8 +97,7 @@ TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
 
 	// POST-GAME DRAW
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
-	gl.ClearColor(0, 0, 0, 1)
-	gl.Clear(gl.COLOR_BUFFER_BIT)
+	ClearScreen({0, 0, 0, 0})
 
 	UseShader(Graphics().post_shader.shader)
 	SetUniform("res", GetResolution())
@@ -109,14 +107,12 @@ TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
 	gl.DrawArrays(gl.TRIANGLES, 0, 6)
 	// -----
 
-
 	win.SwapBuffers(screen.dc)
 	win.ReleaseDC(screen.window, screen.dc)
 
 	state.last_counter = GetWallClock()
 	state.last_cycle_count = end_cycle_count
 }
-
 
 WindowBuffer :: struct {
 	running:         bool,
@@ -202,7 +198,6 @@ GetResolution :: proc() -> [2]f32 {
 
 ResizeWindow :: proc(hWnd: win.HWND, width, h: i32, fullscreen: bool = false) {
 	height := h == 0 ? 1 : h // Prevent division by zero
-
 	rect := win.RECT{0, 0, width, height}
 
 	if !fullscreen {

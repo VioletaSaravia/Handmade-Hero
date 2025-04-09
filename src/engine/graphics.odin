@@ -19,48 +19,17 @@ PostShader :: struct {
 
 NewPostShader :: proc(frag_path: string) -> (new: PostShader) {
 
-	quadVertices := [?]f32 {
-		-1,
-		1,
-		0,
-		1,
-		-1,
-		-1,
-		0,
-		0,
-		1,
-		-1,
-		1,
-		0,
-		-1,
-		1,
-		0,
-		1,
-		1,
-		-1,
-		1,
-		0,
-		1,
-		1,
-		1,
-		1,
-	}
+	verts := [?]f32{-1, 1, 0, 1, -1, -1, 0, 0, 1, -1, 1, 0, -1, 1, 0, 1, 1, -1, 1, 0, 1, 1, 1, 1}
 	quadVAO, quadVBO: u32
 	gl.GenVertexArrays(1, &quadVAO)
 	gl.GenBuffers(1, &quadVBO)
 	gl.BindVertexArray(quadVAO)
 	gl.BindBuffer(gl.ARRAY_BUFFER, quadVBO)
-	gl.BufferData(
-		gl.ARRAY_BUFFER,
-		size_of(quadVertices),
-		raw_data(quadVertices[:]),
-		gl.STATIC_DRAW,
-	)
+	gl.BufferData(gl.ARRAY_BUFFER, size_of(verts), raw_data(verts[:]), gl.STATIC_DRAW)
 	gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, 4 * size_of(f32), uintptr(0))
 	gl.EnableVertexAttribArray(0)
 	gl.VertexAttribPointer(1, 2, gl.FLOAT, gl.FALSE, 4 * size_of(f32), uintptr(2 * size_of(f32)))
 	gl.EnableVertexAttribArray(1)
-
 	new.vao = quadVAO
 
 	gl.GenFramebuffers(1, &new.fbo)
@@ -407,7 +376,6 @@ TileInstance :: struct #packed {
 	fore_color, back_color: [4]f32,
 }
 
-
 @(rodata)
 quad_vertices := [?]f32{0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1}
 @(rodata)
@@ -596,7 +564,7 @@ TilemapLoadCsv :: proc(tilemap: ^Tilemap($x, $y), $csv_path: string) {
 		if err != nil do break
 		for f, j in r {
 			num := strconv.atoi(f)
-			tilemap.instances[u32(i) * x + u32(j)].idx = auto_cast num if num != -1 else 0
+			tilemap.instances[u32(i) * x + u32(j)].idx = auto_cast num
 		}
 	}
 }
