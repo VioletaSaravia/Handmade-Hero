@@ -5,8 +5,12 @@ layout(location = 1) in vec2 aTexCoord;
 
 layout(location = 2) in vec2 instancePos;
 layout(location = 3) in int instanceTile;
+layout(location = 4) in vec4 foreColor;
+layout(location = 5) in vec4 backColor;
 
 out vec2 texCoord;
+out vec4 fore_color;
+out vec4 back_color;
 
 uniform vec2 tile_size;
 uniform ivec2 tileset_size;
@@ -14,6 +18,7 @@ uniform ivec2 tileset_size;
 uniform vec2 res;
 uniform vec2 pos;
 uniform float scale;
+uniform bool two_color;
 
 void main() {
     vec2 world_pos = pos + instancePos + aPos * tile_size;
@@ -28,4 +33,9 @@ void main() {
 
     vec2 tilePos = tileOffset + aTexCoord * tile_size;
     texCoord = vec2(tilePos.x / realTilesetSize.x, tilePos.y / realTilesetSize.y);
+
+    if (two_color) {
+        fore_color = foreColor;
+        back_color = backColor;
+    }
 }

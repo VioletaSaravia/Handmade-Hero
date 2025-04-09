@@ -1,9 +1,122 @@
 package engine
 
+import intrinsics "base:intrinsics"
 import "core:fmt"
 import win "core:sys/windows"
-import uc "core:unicode/utf16"
 import gl "vendor:OpenGL"
+
+@(export)
+GameReloadMemory :: proc(memory: rawptr) {
+	Mem = auto_cast memory
+	gl.load_up_to(4, 6, win.gl_set_proc_address)
+}
+
+TimingBuffer :: struct {
+	delta, target_spf:    f32,
+	last_counter:         i64,
+	last_cycle_count:     i64,
+	perf_count_freq:      i64,
+
+	// Used by sleep()
+	desired_scheduler_ms: u32,
+	granular_sleep_on:    bool,
+}
+
+InitTiming :: proc(refresh_rate: u32) -> (result: TimingBuffer) {
+	target_spf := 1.0 / (f32(refresh_rate))
+	perf_count_freq: i64
+	result = {
+		target_spf           = target_spf,
+		last_counter         = InitPerformanceCounter(&perf_count_freq),
+		last_cycle_count     = intrinsics.read_cycle_counter(),
+		delta                = auto_cast target_spf,
+		desired_scheduler_ms = 1,
+		granular_sleep_on    = auto_cast win.timeBeginPeriod(1),
+	}
+	result.perf_count_freq = perf_count_freq
+
+	return
+}
+
+GetWallClock :: proc() -> i64 {
+	result: win.LARGE_INTEGER
+	win.QueryPerformanceCounter(&result)
+	return auto_cast result
+}
+
+InitPerformanceCounter :: proc(freq: ^i64) -> i64 {
+	result: win.LARGE_INTEGER
+	win.QueryPerformanceFrequency(&result)
+	freq^ = i64(result)
+
+	return GetWallClock()
+}
+
+GetSecondsElapsed :: proc(perf_count_freq, start, end: i64) -> f32 {
+	return f32(end - start) / f32(perf_count_freq)
+}
+
+TimeAndRender :: proc(state: ^TimingBuffer, screen: ^WindowBuffer) {
+	end_cycle_count := intrinsics.read_cycle_counter()
+	cycles_elapsed := end_cycle_count - state.last_cycle_count
+	megacycles_per_frame := f64(cycles_elapsed) / (1000.0 * 1000.0)
+
+	state.delta = GetSecondsElapsed(state.perf_count_freq, state.last_counter, GetWallClock())
+	for state.delta < state.target_spf {
+		if state.granular_sleep_on do win.Sleep(u32(1000.0 * (state.target_spf - state.delta)))
+		state.delta = GetSecondsElapsed(state.perf_count_freq, state.last_counter, GetWallClock())
+	}
+
+	ms_per_frame := state.delta * 1000.0
+	ms_behind := (state.delta - state.target_spf) * 1000.0
+	fps := f64(state.perf_count_freq) / f64(GetWallClock() - state.last_counter)
+
+
+	// PRE-GAME DRAW
+	gl.BindFramebuffer(gl.FRAMEBUFFER, Graphics().post_shader.fbo)
+	ClearScreen()
+	// -----
+
+	GameProcs.Draw()
+
+	// DRAW MOUSE
+	if Mem.Settings.mouse {
+		UseShader(Graphics().shaders[.Default])
+		SetUniform("res", GetResolution())
+		SetUniform("pos", GetMouse())
+		SetUniform("scale", 1.0)
+		SetUniform(
+			"size",
+			[2]f32{cast(f32)Graphics().mouse.size.x, cast(f32)Graphics().mouse.size.y},
+		)
+		SetUniform("color", WHITE)
+
+		UseTexture(Graphics().mouse)
+		DrawMesh(Graphics().square_mesh)
+	}
+	// -----
+
+	// POST-GAME DRAW
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+	gl.ClearColor(0, 0, 0, 1)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+
+	UseShader(Graphics().post_shader.shader)
+	SetUniform("res", GetResolution())
+
+	gl.BindVertexArray(Graphics().post_shader.vao)
+	gl.BindTexture(gl.TEXTURE_2D, Graphics().post_shader.tex)
+	gl.DrawArrays(gl.TRIANGLES, 0, 6)
+	// -----
+
+
+	win.SwapBuffers(screen.dc)
+	win.ReleaseDC(screen.window, screen.dc)
+
+	state.last_counter = GetWallClock()
+	state.last_cycle_count = end_cycle_count
+}
+
 
 WindowBuffer :: struct {
 	running:         bool,

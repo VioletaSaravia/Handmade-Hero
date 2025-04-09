@@ -1,56 +1,108 @@
 package engine
 
+import csv "core:encoding/csv"
 import fmt "core:fmt"
 import os "core:os"
 import fp "core:path/filepath"
+import "core:strconv"
 import s "core:strings"
-import win "core:sys/windows"
 
 import gl "vendor:OpenGL"
 import stbi "vendor:stb/image"
 
 SHADER_PATH :: "../../src/shaders/" when ODIN_DEBUG else "shaders/"
 
-InitOpenGL :: proc(window: win.HWND, settings: ^GameSettings) -> bool {
-	desired_pixel_format := win.PIXELFORMATDESCRIPTOR {
-		nSize      = size_of(win.PIXELFORMATDESCRIPTOR),
-		nVersion   = 1,
-		dwFlags    = win.PFD_SUPPORT_OPENGL | win.PFD_DRAW_TO_WINDOW | win.PFD_DOUBLEBUFFER,
-		iPixelType = win.PFD_TYPE_RGBA,
-		cColorBits = 32,
-		cAlphaBits = 8,
-	}
-
-	window_dc := win.GetDC(window)
-	suggested_pixel_format_index := win.ChoosePixelFormat(window_dc, &desired_pixel_format)
-	suggested_pixel_format: win.PIXELFORMATDESCRIPTOR
-	win.SetPixelFormat(window_dc, suggested_pixel_format_index, &suggested_pixel_format)
-
-	opengl_rc := win.wglCreateContext(window_dc)
-	win.wglMakeCurrent(window_dc, opengl_rc) or_return
-	gl.load_up_to(4, 6, win.gl_set_proc_address)
-
-	gl.Enable(gl.BLEND)
-	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-
-	gl.Viewport(0, 0, settings.resolution.x, settings.resolution.y)
-	win.ReleaseDC(window, window_dc)
-	return true
+PostShader :: struct {
+	fbo, tex, rbo, vao: u32,
+	shader:             Shader,
 }
 
-InitGraphics :: proc(
-	window: win.HWND,
-	settings: ^GameSettings,
-) -> (
-	new: GraphicsBuffer,
-	ok: bool = true,
-) {
-	InitOpenGL(window, settings) or_return
+NewPostShader :: proc(frag_path: string) -> (new: PostShader) {
 
-	new.shaders[.Default] = NewShader("", "") or_return
-	new.shaders[.Tiled] = NewShader("tiled.vert", "") or_return
-	new.square_mesh = NewMesh(square_vertices[:], square_indices[:])
-	new.mouse = NewTexture("pointer.png")
+	quadVertices := [?]f32 {
+		-1,
+		1,
+		0,
+		1,
+		-1,
+		-1,
+		0,
+		0,
+		1,
+		-1,
+		1,
+		0,
+		-1,
+		1,
+		0,
+		1,
+		1,
+		-1,
+		1,
+		0,
+		1,
+		1,
+		1,
+		1,
+	}
+	quadVAO, quadVBO: u32
+	gl.GenVertexArrays(1, &quadVAO)
+	gl.GenBuffers(1, &quadVBO)
+	gl.BindVertexArray(quadVAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, quadVBO)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		size_of(quadVertices),
+		raw_data(quadVertices[:]),
+		gl.STATIC_DRAW,
+	)
+	gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, 4 * size_of(f32), uintptr(0))
+	gl.EnableVertexAttribArray(0)
+	gl.VertexAttribPointer(1, 2, gl.FLOAT, gl.FALSE, 4 * size_of(f32), uintptr(2 * size_of(f32)))
+	gl.EnableVertexAttribArray(1)
+
+	new.vao = quadVAO
+
+	gl.GenFramebuffers(1, &new.fbo)
+	gl.BindFramebuffer(gl.FRAMEBUFFER, new.fbo)
+
+	gl.GenTextures(1, &new.tex)
+	gl.BindTexture(gl.TEXTURE_2D, new.tex)
+	gl.TexImage2D(
+		gl.TEXTURE_2D,
+		0,
+		gl.RGB,
+		Mem.Settings.resolution.x,
+		Mem.Settings.resolution.y,
+		0,
+		gl.RGB,
+		gl.UNSIGNED_BYTE,
+		nil,
+	)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, new.tex, 0)
+
+	gl.GenRenderbuffers(1, &new.rbo)
+	gl.BindRenderbuffer(gl.RENDERBUFFER, new.rbo)
+	gl.RenderbufferStorage(
+		gl.RENDERBUFFER,
+		gl.DEPTH24_STENCIL8,
+		Mem.Settings.resolution.x,
+		Mem.Settings.resolution.y,
+	)
+	gl.FramebufferRenderbuffer(
+		gl.FRAMEBUFFER,
+		gl.DEPTH_STENCIL_ATTACHMENT,
+		gl.RENDERBUFFER,
+		new.rbo,
+	)
+
+	for gl.CheckFramebufferStatus(gl.FRAMEBUFFER) != gl.FRAMEBUFFER_COMPLETE do continue
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+
+	shader, _ := NewShader("post.vert", frag_path)
+	new.shader = shader
 
 	return
 }
@@ -208,6 +260,10 @@ SetUniform4f :: proc(name: string, value: [4]f32) {
 	)
 }
 
+SetUniform1b :: proc(name: string, value: bool) {
+	SetUniform1i(name, value ? 1 : 0)
+}
+
 SetUniform :: proc {
 	SetUniform1i,
 	SetUniform2i,
@@ -216,11 +272,13 @@ SetUniform :: proc {
 	SetUniform2f,
 	SetUniform3f,
 	SetUniform4f,
+	SetUniform1b,
 }
 
 Texture :: struct {
-	id:           u32,
-	w, h, n_chan: i32,
+	id:     u32,
+	n_chan: i32,
+	size:   [2]i32,
 }
 
 NewTexture :: proc($path: string) -> (new: Texture) {
@@ -229,8 +287,8 @@ NewTexture :: proc($path: string) -> (new: Texture) {
 	img := stbi.load_from_memory(
 		raw_data(data),
 		auto_cast len(data),
-		&new.w,
-		&new.h,
+		&new.size.x,
+		&new.size.y,
 		&new.n_chan,
 		0,
 	)
@@ -238,14 +296,24 @@ NewTexture :: proc($path: string) -> (new: Texture) {
 	gl.GenTextures(1, &new.id)
 	gl.BindTexture(gl.TEXTURE_2D, new.id)
 
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
 
 	format: u32 = fp.ext(path) == ".bmp" ? gl.RGB : gl.RGBA
 
-	gl.TexImage2D(gl.TEXTURE_2D, 0, i32(format), new.w, new.h, 0, format, gl.UNSIGNED_BYTE, img)
+	gl.TexImage2D(
+		gl.TEXTURE_2D,
+		0,
+		i32(format),
+		new.size.x,
+		new.size.y,
+		0,
+		format,
+		gl.UNSIGNED_BYTE,
+		img,
+	)
 	// gl.GenerateMipmap(gl.TEXTURE_2D)
 
 	stbi.image_free(img)
@@ -263,7 +331,7 @@ DrawTexture :: proc(tex: Texture, pos: [2]f32 = {}, scale: f32 = 1) {
 	SetUniform("res", GetResolution())
 	SetUniform("pos", pos)
 	SetUniform("scale", scale)
-	SetUniform("size", [2]f32{f32(tex.w), f32(tex.h)})
+	SetUniform("size", [2]f32{f32(tex.size.x), f32(tex.size.y)})
 	SetUniform("color", WHITE)
 	UseTexture(tex)
 	DrawMesh(Graphics().square_mesh)
@@ -275,8 +343,7 @@ ClearScreen :: proc(color: [4]f32 = 0) {
 }
 
 Mesh :: struct {
-	// TODO: Hace falta almacenar el EBO y el VBO?
-	ebo, vbo, vao: u32,
+	vao: u32,
 }
 
 @(rodata)
@@ -285,20 +352,22 @@ square_vertices := [?]f32{1, 1, 0, 1, 0, 1, -1, 0, 1, 1, -1, -1, 1, 0, 1, -1, 1,
 square_indices := [?]u32{0, 1, 3, 1, 2, 3}
 
 NewMesh :: proc(vertices: []f32, indices: []u32) -> (new: Mesh) {
-	gl.GenBuffers(1, &new.ebo)
-	gl.GenBuffers(1, &new.vbo)
+	ebo, vbo: u32
+
+	gl.GenBuffers(1, &ebo)
+	gl.GenBuffers(1, &vbo)
 	gl.GenVertexArrays(1, &new.vao)
 
 	gl.BindVertexArray(new.vao)
 
-	gl.BindBuffer(gl.ARRAY_BUFFER, new.vbo)
+	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
 	gl.BufferData(
 		gl.ARRAY_BUFFER,
 		size_of(f32) * len(vertices),
 		raw_data(vertices),
 		gl.STATIC_DRAW,
 	)
-	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, new.ebo)
+	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo)
 	gl.BufferData(
 		gl.ELEMENT_ARRAY_BUFFER,
 		size_of(u32) * len(indices),
@@ -323,15 +392,19 @@ DrawMesh :: proc(mesh: Mesh) {
 }
 
 Tilemap :: struct($x, $y: u32) {
-	tileset:              Texture,
-	tile_size:            [2]f32,
-	vao, vbo, ebo, i_vbo: u32,
-	instances:            [x * y]TileInstance,
+	tileset:                    Texture,
+	tile_size:                  [2]f32,
+	vao, ebo:                   u32,
+	vbo, id_vbo, pos_vbo:       u32,
+	col_fore_vbo, col_back_vbo: u32,
+	instances:                  #soa[x * y]TileInstance,
+	width:                      u32,
 }
 
-TileInstance :: struct {
-	pos: [2]f32,
-	idx: i32,
+TileInstance :: struct #packed {
+	pos:                    [2]f32,
+	idx:                    i32,
+	fore_color, back_color: [4]f32,
 }
 
 
@@ -340,16 +413,35 @@ quad_vertices := [?]f32{0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1}
 @(rodata)
 quad_indices := [?]i32{0, 1, 2, 2, 3, 0}
 
-NewTilemap :: proc($tileset_path: string, $x, $y: u32, tile_size: [2]f32) -> (new: Tilemap(x, y)) {
-	new.tileset = NewTexture(tileset_path)
+NewTilemapFromPath :: proc(
+	$tileset_path: string,
+	$x, $y: u32,
+	tile_size: [2]f32,
+) -> Tilemap(x, y) {
+	return NewTilemapFromTexture(NewTexture(tileset_path), x, y, tile_size)
+}
+
+NewTilemapFromTexture :: proc(
+	tileset: Texture,
+	$x, $y: u32,
+	tile_size: [2]f32,
+) -> (
+	new: Tilemap(x, y),
+) {
+	new.tileset = tileset
 	new.tile_size = tile_size
+	new.width = x
 
 	gl.GenVertexArrays(1, &new.vao)
 	gl.GenBuffers(1, &new.vbo)
 	gl.GenBuffers(1, &new.ebo)
-	gl.GenBuffers(1, &new.i_vbo)
+	gl.GenBuffers(1, &new.id_vbo)
+	gl.GenBuffers(1, &new.pos_vbo)
+	gl.GenBuffers(1, &new.col_fore_vbo)
+	gl.GenBuffers(1, &new.col_back_vbo)
 	gl.BindVertexArray(new.vao)
 
+	// VERTEX VBO
 	gl.BindBuffer(gl.ARRAY_BUFFER, new.vbo)
 	gl.BufferData(
 		gl.ARRAY_BUFFER,
@@ -363,6 +455,7 @@ NewTilemap :: proc($tileset_path: string, $x, $y: u32, tile_size: [2]f32) -> (ne
 	gl.VertexAttribPointer(1, 2, gl.FLOAT, gl.FALSE, 4 * size_of(f32), uintptr(2 * size_of(f32)))
 	gl.EnableVertexAttribArray(1)
 
+	// INDEX VBO
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, new.ebo)
 	gl.BufferData(
 		gl.ELEMENT_ARRAY_BUFFER,
@@ -376,36 +469,86 @@ NewTilemap :: proc($tileset_path: string, $x, $y: u32, tile_size: [2]f32) -> (ne
 		new.instances[i].pos = [2]f32{new.tile_size.x * f32(ix), new.tile_size.y * f32(iy)}
 	}
 
-	gl.BindBuffer(gl.ARRAY_BUFFER, new.i_vbo)
+	// INSTANCE POS VBO
+	gl.BindBuffer(gl.ARRAY_BUFFER, new.pos_vbo)
 	gl.BufferData(
 		gl.ARRAY_BUFFER,
-		size_of(TileInstance) * len(new.instances),
-		raw_data(new.instances[:]),
-		gl.DYNAMIC_DRAW,
+		size_of([2]f32) * len(new.instances.pos),
+		raw_data(new.instances.pos[:]),
+		gl.STATIC_DRAW,
 	)
 
-	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, size_of(TileInstance), uintptr(0))
+	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, 0, uintptr(0))
 	gl.EnableVertexAttribArray(2)
 	gl.VertexAttribDivisor(2, 1)
 
-	gl.VertexAttribIPointer(3, 1, gl.INT, size_of(TileInstance), uintptr(2 * size_of(f32)))
+	// INSTANCE ID VBO
+	gl.BindBuffer(gl.ARRAY_BUFFER, new.id_vbo)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		size_of(i32) * len(new.instances.idx),
+		raw_data(new.instances.idx[:]),
+		gl.DYNAMIC_DRAW,
+	)
+
+	gl.VertexAttribIPointer(3, 1, gl.INT, 0, uintptr(0))
 	gl.EnableVertexAttribArray(3)
 	gl.VertexAttribDivisor(3, 1)
+
+	// INSTANCE FORE COLOR VBO
+	gl.BindBuffer(gl.ARRAY_BUFFER, new.col_fore_vbo)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		4 * size_of(f32) * len(new.instances.fore_color),
+		raw_data(new.instances.fore_color[:]),
+		gl.DYNAMIC_DRAW,
+	)
+
+	gl.VertexAttribPointer(4, 4, gl.FLOAT, gl.FALSE, 0, uintptr(0))
+	gl.EnableVertexAttribArray(4)
+	gl.VertexAttribDivisor(4, 1)
+
+	// INSTANCE BACK COLOR VBO
+	gl.BindBuffer(gl.ARRAY_BUFFER, new.col_back_vbo)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		4 * size_of(f32) * len(new.instances.back_color),
+		raw_data(new.instances.back_color[:]),
+		gl.DYNAMIC_DRAW,
+	)
+
+	gl.VertexAttribPointer(5, 4, gl.FLOAT, gl.FALSE, 0, uintptr(0))
+	gl.EnableVertexAttribArray(5)
+	gl.VertexAttribDivisor(5, 1)
+
+	for &i in new.instances.fore_color do i = 1
+	for &i in new.instances.back_color do i = 0
 
 	return
 }
 
-DrawTilemap :: proc(tilemap: ^Tilemap($x, $y), pos: [2]f32 = {}, scale: f32 = 2) {
+NewTilemap :: proc {
+	NewTilemapFromPath,
+	NewTilemapFromTexture,
+}
+
+DrawTilemap :: proc(
+	tilemap: ^Tilemap($x, $y),
+	pos: [2]f32 = {},
+	scale: f32 = 2,
+	two_color: bool = false,
+) {
 	UseShader(Graphics().shaders[.Tiled])
 	SetUniform("tile_size", tilemap.tile_size)
 	tileset_size := [2]i32 {
-		tilemap.tileset.w / i32(tilemap.tile_size.x),
-		tilemap.tileset.h / i32(tilemap.tile_size.y),
+		tilemap.tileset.size.x / i32(tilemap.tile_size.x),
+		tilemap.tileset.size.y / i32(tilemap.tile_size.y),
 	}
 	SetUniform("tileset_size", tileset_size)
 	SetUniform("res", GetResolution())
 	SetUniform("pos", pos)
-	SetUniform("scale", scale)
+	SetUniform("scale", scale * 2)
+	SetUniform("two_color", two_color)
 	SetUniform("tex0", 0)
 
 	UseTexture(tilemap.tileset)
@@ -413,15 +556,49 @@ DrawTilemap :: proc(tilemap: ^Tilemap($x, $y), pos: [2]f32 = {}, scale: f32 = 2)
 	gl.BindVertexArray(tilemap.vao)
 
 	// on-the-fly tilemap updating
-	gl.BindBuffer(gl.ARRAY_BUFFER, tilemap.i_vbo)
+	gl.BindBuffer(gl.ARRAY_BUFFER, tilemap.id_vbo)
 	gl.BufferSubData(
 		gl.ARRAY_BUFFER,
 		0,
-		size_of(TileInstance) * len(tilemap.instances),
-		raw_data(tilemap.instances[:]),
+		size_of(i32) * len(tilemap.instances.idx),
+		raw_data(tilemap.instances.idx[:]),
+	)
+	gl.BindBuffer(gl.ARRAY_BUFFER, tilemap.col_fore_vbo)
+	gl.BufferSubData(
+		gl.ARRAY_BUFFER,
+		0,
+		4 * size_of(f32) * len(tilemap.instances.fore_color),
+		raw_data(tilemap.instances.fore_color[:]),
+	)
+	gl.BindBuffer(gl.ARRAY_BUFFER, tilemap.col_back_vbo)
+	gl.BufferSubData(
+		gl.ARRAY_BUFFER,
+		0,
+		4 * size_of(f32) * len(tilemap.instances.back_color),
+		raw_data(tilemap.instances.back_color[:]),
 	)
 
 	gl.DrawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil, len(tilemap.instances))
+}
+
+TilemapLoadCsv :: proc(tilemap: ^Tilemap($x, $y), $csv_path: string) {
+	r: csv.Reader
+	r.reuse_record = true
+	r.reuse_record_buffer = true
+	defer csv.reader_destroy(&r)
+
+	layer1_data := #load(DATA + csv_path)
+	assert(len(layer1_data) < int((x * y) * 4 + y))
+
+	csv.reader_init_with_string(&r, string(layer1_data))
+
+	for r, i, err in csv.iterator_next(&r) {
+		if err != nil do break
+		for f, j in r {
+			num := strconv.atoi(f)
+			tilemap.instances[u32(i) * x + u32(j)].idx = auto_cast num if num != -1 else 0
+		}
+	}
 }
 
 BitmapCharmap := [256]f32 {
@@ -547,7 +724,7 @@ DrawText :: proc(text: string, tilemap: ^Tilemap($x, $y), pos: [2]f32 = {}, scal
 		for i in box_i ..< int(x * y) do tilemap.instances[i].idx = 0
 	}
 
-	DrawTilemap(tilemap, pos, scale)
+	DrawTilemap(tilemap, pos, scale, true)
 }
 
 
