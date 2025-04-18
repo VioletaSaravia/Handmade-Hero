@@ -1,0 +1,28 @@
+BasedOnStyle: LLVM
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+BreakBeforeBraces: Attach # K&R style
+ColumnLimit: 100
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+AllowShortIfStatementsOnASingleLine: true
+AllowShortIfElseStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortCaseLabelsOnASingleLine: true
+AlwaysBreakTemplateDeclarations: Yes
+SpaceBeforeParens: ControlStatements
+Cpp11BracedListStyle: true
+AllowTrailingComma: true
+AlignConsecutiveDeclarations: true
+AlignConsecutiveAssignments: true
