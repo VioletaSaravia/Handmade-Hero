@@ -14,5 +14,5 @@ void main() {
     vec4 color = texture(tex0, texCoord);
 
     if (!two_color) FragColor = color;
-    else FragColor = color == vec4(1) ? back_color : fore_color;
+    else FragColor = color == vec4(0) ? back_color : fore_color;
 }

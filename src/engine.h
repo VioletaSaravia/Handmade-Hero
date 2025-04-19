@@ -46,7 +46,10 @@ typedef struct {
 
 typedef Array string;
 string        String(cstr data) {
-    return (string){.data = data, .len = (u32)strlen(data)};
+    string result;
+    result.data = data;
+    result.len  = (u32)strlen(data);
+    return result;
 }
 
 typedef union {
@@ -57,6 +60,18 @@ typedef union {
         f32 w, h;
     };
 } v2;
+
+inline v2 v2Add(v2 a, v2 b) {
+    return (v2){a.x + b.x, a.y + b.y};
+}
+
+inline v2 v2Sub(v2 a, v2 b) {
+    return (v2){a.x - b.x, a.y - b.y};
+}
+
+inline v2 v2Scale(v2 a, f32 s) {
+    return (v2){a.x * s, a.y * s};
+}
 
 typedef union {
     struct {
@@ -96,6 +111,11 @@ typedef union {
 inline bool V2InRect(v2 pos, Rect rectangle);
 
 typedef struct {
+    v2  pos;
+    f32 radius;
+} Circle;
+
+typedef struct {
     v2 *verts;
     u32 count;
 } Poly;
@@ -105,13 +125,9 @@ typedef struct {
 // u8 *Alloc(MemRegion *buf, u32 size);
 // u8 *RingAlloc(MemRegion *buf, u32 size);
 
-// TODO Allocators
-typedef enum { Normal, Ring } Allocator;
-
 typedef struct {
-    Allocator type;
-    u32       count, size;
-    u8       *data;
+    u32 count, size;
+    u8 *data;
 } MemRegion;
 MemRegion NewMemRegion(u32 size);
 
@@ -279,18 +295,18 @@ typedef struct {
     f32 freq, damp, resp;
 } Damper;
 
-void DamperSetK(Damper *this) {
-    this->_k1 = this->damp / (PI * this->freq);
-    this->_k2 = 1 / ((TAU * this->freq) * (TAU * this->freq));
-    this->_k3 = this->resp * this->damp / (TAU * this->freq);
+void DamperSetK(Damper *val) {
+    val->_k1 = val->damp / (PI * val->freq);
+    val->_k2 = 1 / ((TAU * val->freq) * (TAU * val->freq));
+    val->_k3 = val->resp * val->damp / (TAU * val->freq);
 }
 
-void DamperSet(Damper *this, f32 f, f32 z, f32 r) {
-    this->freq = f;
-    this->damp = z;
-    this->resp = r;
+void DamperSet(Damper *val, f32 f, f32 z, f32 r) {
+    val->freq = f;
+    val->damp = z;
+    val->resp = r;
 
-    DamperSetK(this);
+    DamperSetK(val);
 }
 
 Damper NewDamper(f32 f, f32 z, f32 r) {
@@ -317,21 +333,21 @@ f32d Newf32d(f32 x0) {
     };
 }
 
-void f32dUpdate(f32d *this, const Damper *damper, f32 delta, f32 x) {
-    // if (!this->started) {}
+void f32dUpdate(f32d *val, const Damper *damper, f32 delta, f32 x) {
+    // if (!val->started) {}
 
-    if (!this->enabled) {
-        this->y = x;
+    if (!val->enabled) {
+        val->y = x;
         return;
     }
 
-    f32 xd    = (x - this->_xp) / delta;
-    this->_xp = x;
-    this->y   = this->y + delta * this->_yd;
+    f32 xd   = (x - val->_xp) / delta;
+    val->_xp = x;
+    val->y   = val->y + delta * val->_yd;
 
     f32 k2Stable = MAX(damper->_k2, 1.1 * (delta * delta / 4 + delta * damper->_k1 / 2));
-    this->_yd =
-        this->_yd + delta * (x + damper->_k3 * xd - this->y - damper->_k1 * this->_yd) / k2Stable;
+    val->_yd =
+        val->_yd + delta * (x + damper->_k3 * xd - val->y - damper->_k1 * val->_yd) / k2Stable;
 }
 
 Rect BoundingBoxOfSelection(const v2 *vects, const u32 count, const b64 selMap) {
@@ -363,14 +379,13 @@ i32       ConvexHullCmp(const void *a, const void *b) {
 Poly ConvexHullOfSelection(v2 *points, u32 count, b32 bitmap) {
     Poly result = {0};
     if (count < 3) {
-        Poly      poly   = {0};
         MemRegion region = NewMemRegion(sizeof(v2) * count);
-        poly.verts       = (v2 *)region.data;
-        poly.count       = count;
+        result.verts     = (v2 *)region.data;
+        result.count     = count;
         for (u32 i = 0; i < count; ++i) {
-            poly.verts[i] = points[i];
+            result.verts[i] = points[i];
         }
-        return poly;
+        return result;
     }
 
     // Find pivot (lowest y, then lowest x)
@@ -556,15 +571,6 @@ typedef struct {
 
 #define MAX_KEYBINDS 3
 
-static Keybind Keys[ACTION_COUNT][MAX_KEYBINDS] = {
-    [ACTION_UP]     = {{INPUT_Keyboard, 'W'}, {INPUT_Gamepad1, PAD_Up}},
-    [ACTION_DOWN]   = {0},
-    [ACTION_LEFT]   = {0},
-    [ACTION_RIGHT]  = {0},
-    [ACTION_ACCEPT] = {0},
-    [ACTION_CANCEL] = {0},
-};
-
 internal void ProcessKeyboard(ButtonState *keys, bool *running);
 internal void ProcessGamepads(GamepadState *gamepads);
 internal void ProcessMouse(MouseState *mouse);
@@ -589,12 +595,11 @@ typedef struct {
     f32 scale;
     f32 speed;
 } Camera;
-v2 GetResolution();
-v2 Mouse();
-v2 MouseInWorld(Camera cam);
-
-#define TILES_X 20
-#define TILES_Y 15
+void CameraBegin(Camera cam);
+void CameraEnd();
+v2   GetResolution();
+v2   Mouse();
+v2   MouseInWorld(Camera cam);
 
 typedef struct {
     u32 id;
@@ -627,6 +632,7 @@ typedef enum {
     SHADER_Default,
     SHADER_Tiled,
     SHADER_Rect,
+    SHADER_Line,
     SHADER_COUNT,
 } Shaders;
 
@@ -634,41 +640,75 @@ typedef struct {
     u32    fbo, tex, rbo, vao;
     Shader shader;
 } Framebuffer;
-Framebuffer NewFramebuffer(cstr fragPath);
+Framebuffer NewFramebuffer(const cstr fragPath);
 void        UseFramebuffer(Framebuffer shader);
 void        DrawFramebuffer(Framebuffer shader);
+void        ResizeFramebuffer(Framebuffer shader);
 
 typedef struct Texture {
     u32 id;
     i32 nChan;
     v2i size;
 } Texture;
-Texture NewTexture(cstr path);
+Texture NewTexture(const cstr path);
+Texture NewTextureFromMemory(void *memory, v2i size);
 void    UseTexture(Texture tex);
 void    DrawTexture(Texture tex, v2 pos, f32 scale);
+
+// TODO VAO instancing
+typedef struct {
+    u32  type, stride, count;
+    u64  offset;
+    bool div;
+} Attrib;
+
+typedef struct {
+    u32    id;
+    Attrib attribs[4];
+    u32    dataType, drawType;
+    i32    size;
+    void  *data;
+} BO;
+
+typedef struct {
+    u32 id;
+    BO  buffers[16];
+    i32 curAttrib;
+} VAO;
+VAO  InitVao(VAO result);
+void InitVaoFromShader(const char *shaderFile, VAO *vao);
+void UseVAO(const VAO *vao);
 
 typedef struct Tileset {
     Texture tex;
     v2      tileSize;
 } Tileset;
-Tileset NewTileset(cstr path, v2 tileSize);
+Tileset NewTileset(const cstr path, v2 tileSize);
 
 typedef struct Tilemap {
     Tileset tileset;
     u32     vao, ebo;
     u32     vbo, idVbo, posVbo;
     u32     colForeVbo, colBackVbo;
-    v2      instPos[TILES_X * TILES_Y];
-    i32     instIdx[TILES_X * TILES_Y];
-    v4      instForeColor[TILES_X * TILES_Y];
-    v4      instBackColor[TILES_X * TILES_Y];
+    v2      size;
+    i32    *instIdx;
+    v4     *instForeColor;
+    v4     *instBackColor;
     u32     width;
 } Tilemap;
-Tilemap NewTilemap(Tileset tileset);
-void    DrawTilemap(const Tilemap *tilemap, v2 pos, f32 scale, bool twoColor);
+Tilemap NewTilemap(Tileset tileset, v2 size);
+void    DrawTilemap(const Tilemap *tilemap, v2 pos, f32 scale, bool twoColor, i32 width);
 void    TilemapLoadCsv(Tilemap *tilemap, cstr csvPath);
-void    WriteText(cstr text, Tilemap *tilemap, v2 pos, f32 scale);
-void    DrawText(string text, Tilemap *tilemap, v2 pos, f32 scale);
+void    DrawText(const cstr text, v2 pos, i32 width, f32 scale);
+
+// TODO Shader attrib parser
+typedef struct {
+    u32  location;
+    char type[32];
+    char name[64];
+} ShaderAttrib;
+void ParseShaderAttribs(const char *filename, ShaderAttrib *attribs, int *attribCount);
+u32  GlslTypeToEnum(const char *type);
 
 void ClearScreen(v4 color);
 
@@ -748,11 +788,11 @@ typedef enum {
     GUI_HOVERED,
     GUI_PRESSED,
 } GuiState;
-GuiState GuiButton(Rect button);
+GuiState GuiButton(Rect button, cstr text);
 GuiState GuiSlider(f32 *val, Rect coords, f32 from, f32 to);
 
 // ===== DEBUG =====
 
-void DrawRectangle(Rect rect, v4 color);
-void DrawLine(v2 from, v2 to, v4 color);
-void DrawPoly(Poly poly, v4 color);
+void DrawRectangle(Rect rect, v4 color, f32 radius);
+void DrawLine(v2 from, v2 to, v4 color, f32 thickness);
+void DrawPoly(Poly poly, v4 color, f32 thickness);

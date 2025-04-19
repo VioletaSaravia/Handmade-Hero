@@ -20,6 +20,7 @@ typedef struct GameSettings {
     v2i  resolution;
     f32  scale;
     bool disableMouse;
+    bool fullscreen;
 } GameSettings;
 
 typedef struct InputCtx {
@@ -36,6 +37,7 @@ typedef struct GraphicsCtx {
     u32         activeShader;
     Mesh        squareMesh;
     Texture     mouse;
+    Tilemap     textBox;
     Camera      cam;
 } GraphicsCtx;
 internal void *Win32GetProcAddress(const char *name);
@@ -53,12 +55,12 @@ typedef struct SoundBuffer {
     f32          vol, pan;
     PlaybackType type;
     bool         playing;
-    ma_decoder   decoder; // TODO Audio
+    ma_decoder   decoder;
 } SoundBuffer;
 
 #define MAX_SOUNDS 32
 typedef struct AudioCtx {
-    ma_device        device; // TODO Audio
+    ma_device        device;
     ma_device_config config;
     SoundBuffer      sounds[MAX_SOUNDS];
     u32              count;
@@ -75,11 +77,13 @@ internal f32 GetSecondsElapsed(i64 perfCountFreq, i64 start, i64 end);
 
 typedef struct WindowCtx {
     bool       running;
+    bool       fullscreen;
     u8        *memory;
     u64        memoryLen;
     i32        w, h, bytesPerPx;
     HWND       window;
     HDC        dc;
+    RECT       windowedRect;
     u32        refreshRate;
     BITMAPINFO info;
     v2         mousePos;
@@ -87,7 +91,7 @@ typedef struct WindowCtx {
 LRESULT WINAPI MainWindowCallback(HWND window, u32 msg, WPARAM wParam, LPARAM lParam);
 internal void  ResizeDIBSection(WindowCtx *window, v2i size);
 internal u32   GetRefreshRate(HWND hWnd);
-internal void  ResizeWindow(HWND hWnd, v2i size, bool fullscreen);
+internal void  ResizeWindow(HWND hWnd, v2i size);
 internal void  LockCursorToWindow(HWND hWnd);
 
 typedef struct EngineCtx {
@@ -99,8 +103,3 @@ typedef struct EngineCtx {
     GraphicsCtx  Graphics;
     GameProcs    Game;
 } EngineCtx;
-
-#undef ALLOC
-#define ALLOC(size) VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
-#undef FREE
-#define FREE(ptr) VirtualFree(ptr, 0, MEM_RELEASE)

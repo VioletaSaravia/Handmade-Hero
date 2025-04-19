@@ -7,17 +7,10 @@
     - [X] Rect collision
     - [ ] Optimize collision
     - [ ] Global allocator
-    - [ ] Bezier drawing shader
-    - [ ] Bezier GUI
 
     FIXME
     - [X] Calculate mouse pos only once per frame
 */
-
-typedef enum {
-    SCENE_MENU,
-    SCENE_GAME,
-} Scene;
 
 #define MOVE_LIMIT 32
 struct MoveList {
@@ -46,15 +39,8 @@ typedef struct {
 } SelectionCtx;
 
 typedef struct {
-    bool draw;
-} DebugCtx;
-
-typedef struct {
-    DebugCtx debugCtx;
-    Camera   cam;
-    Scene    scene;
-
-    Sound sounds[MAX_SOUNDS];
+    Camera cam;
+    Sound  sounds[MAX_SOUNDS];
 
     SelectionCtx selCtx;
     Entities     units;
@@ -72,9 +58,6 @@ extern void Setup() {
 }
 
 extern void Init() {
-#ifdef DEBUG
-    S->debugCtx.draw = true;
-#endif
     S->unitTypes = (UnitTypes){
         .count = 8,
         .tex   = ALLOC(sizeof(Texture) + S->unitTypes.count),
@@ -85,7 +68,7 @@ extern void Init() {
     S->sounds[0]          = LoadSound("data\\gun.wav", ONESHOT);
 
     S->selCtx.selector = NewTexture("data\\selector_square_32x32.png");
-    S->cam             = (Camera){(v2){0}, 1.0f, 100};
+    S->cam             = (Camera){(v2){0}, 1.0f, 200};
 
     S->units = (Entities){.buffer     = NewMemRegion(64 * 10000),
                           .components = NewDictionary(64),
@@ -111,7 +94,7 @@ extern void Init() {
     }
 }
 
-void ProcessCamera(Camera *cam) {
+void ProcessWASDCamera(Camera *cam) {
     v2 move = {0, 0};
     if (Input()->keys['W'] >= Pressed) move.y -= 1;
     if (Input()->keys['A'] >= Pressed) move.x -= 1;
@@ -122,7 +105,7 @@ void ProcessCamera(Camera *cam) {
     S->cam.pos.y += move.y * cam->speed * Delta();
 }
 
-void ProcessSelection(SelectionCtx *ctx, const Entities *units, const UnitTypes *types) {
+void ProcessMouseSelection(SelectionCtx *ctx, const Entities *units, const UnitTypes *types) {
     const v2  *pos    = DictGet(&units->components, "pos");
     const u32 *uTypes = DictGet(&units->components, "types");
 
@@ -158,11 +141,15 @@ void ProcessSelection(SelectionCtx *ctx, const Entities *units, const UnitTypes 
         }
         break;
 
-    case JustReleased: ctx->selecting = false; break;
+    case JustReleased: {
+        ctx->selecting = false;
+        ctx->selBox    = (Rect){0};
+        break;
+    }
     }
 }
 
-void ProcessMovement(const SelectionCtx *ctx, Entities *units) {
+void ProcessMovementToTarget(const SelectionCtx *ctx, Entities *units) {
     const v2 *pos     = DictGet(&units->components, "pos");
     MoveList *targets = DictGet(&units->components, "targets");
 
@@ -199,7 +186,7 @@ void ProcessMovement(const SelectionCtx *ctx, Entities *units) {
     }
 }
 
-void CalculateMovement(const Entities *units, const UnitTypes *types) {
+void CalculateMovementToTargetWithCollision(const Entities *units, const UnitTypes *types) {
     v2        *pos       = DictGet(&units->components, "pos");
     MoveList  *targets   = DictGet(&units->components, "targets");
     const u32 *uTypes    = DictGet(&units->components, "types");
@@ -246,10 +233,6 @@ void CalculateMovement(const Entities *units, const UnitTypes *types) {
     }
 }
 
-void ProcessDebug(DebugCtx *ctx) {
-    if (Input()->keys[KEY_F9] == JustPressed) ctx->draw ^= true;
-}
-
 void DrawUnits(const UnitTypes *types, const Entities *units, const SelectionCtx *ctx) {
     const v2  *pos    = DictGet(&units->components, "pos");
     const u32 *uTypes = DictGet(&units->components, "types");
@@ -265,26 +248,23 @@ void DrawUnits(const UnitTypes *types, const Entities *units, const SelectionCtx
     }
 }
 
-void DebugDraw(const DebugCtx *ctx) {
-    if (!ctx->draw) return;
-    if (S->selCtx.selecting) DrawRectangle(S->selCtx.selBox, (v4){.2, .2, .8, .4});
-    DrawRectangle(BoundingBoxOfSelection((v2 *)DictGet(&S->units.components, "pos"), S->units.count,
-                                         S->selCtx.selMap),
-                  (v4){1, 1, 1, 0.4});
-}
-
 extern void Update() {
-    ProcessSelection(&S->selCtx, &S->units, &S->unitTypes);
-    ProcessMovement(&S->selCtx, &S->units);
-    CalculateMovement(&S->units, &S->unitTypes);
+    ProcessMouseSelection(&S->selCtx, &S->units, &S->unitTypes);
+    ProcessMovementToTarget(&S->selCtx, &S->units);
+    CalculateMovementToTargetWithCollision(&S->units, &S->unitTypes);
 
-    ProcessDebug(&S->debugCtx);
-    ProcessCamera(&S->cam);
+    ProcessWASDCamera(&S->cam);
 }
 
 extern void Draw() {
     CameraBegin(S->cam);
     DrawUnits(&S->unitTypes, &S->units, &S->selCtx);
-    DebugDraw(&S->debugCtx);
+    DrawRectangle(S->selCtx.selBox, (v4){0.2, 0.2, 0.6, 0.4}, 5);
     CameraEnd();
+
+    f32 scale = 2;
+    DrawRectangle((Rect){0, -10, 640, 14 * scale + 10}, (v4){0, 0, 0, 1}, 0);
+    DrawText(" [File]  [Edit]  [View]  [Help]", (v2){0, 2 * scale}, 0, scale);
+    GuiButton((Rect){50, 50, 100, 24}, "Click me!");
+    DrawLine((v2){100, 100}, (v2){400, 300}, WHITE, 1);
 }

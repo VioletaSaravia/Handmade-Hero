@@ -1,7 +1,5 @@
 {
     "files.associations": {
-        "*.h": "c",
-        "cstddef": "c",
-        "type_traits": "c"
+        "*.h": "c"
     }
 }
