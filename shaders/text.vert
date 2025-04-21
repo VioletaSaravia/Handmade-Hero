@@ -7,6 +7,15 @@ layout(location = 1) in vec2 aTexCoord;
 // #+BUFFER
 layout(location = 2) in int instanceTile; // #+ DIV
 
+// #+BUFFER
+layout(location = 3) in vec4 foreColor; // #+ DIV
+
+// #+BUFFER
+layout(location = 4) in vec4 backColor; // #+ DIV
+
+// #+BUFFER
+layout(location = 5) in int format; // #+ DIV
+
 out vec2 texCoord;
 out vec4 fore_color;
 out vec4 back_color;

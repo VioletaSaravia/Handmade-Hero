@@ -38,8 +38,7 @@ typedef struct GraphicsCtx {
 } GraphicsCtx;
 internal void *Win32GetProcAddress(const char *name);
 internal void  InitOpenGL(HWND hWnd, const GameSettings *settings);
-internal void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx *graphics,
-                            bool mouse);
+internal void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx *graphics);
 
 typedef struct Sound {
     u32 id;

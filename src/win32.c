@@ -80,8 +80,7 @@ void *DictUpdate(Dictionary *dict, const cstr key, void *data) {
     return 0;
 }
 void *DictGet(const Dictionary *dict, const cstr key) {
-    LARGE_INTEGER freq, start, end;
-    KVPair       *match = dict->data[dict->Hash(key) % dict->size];
+    KVPair *match = dict->data[dict->Hash(key) % dict->size];
     for (size_t i = 0; i < MAX_COLLISIONS; i++) {
         if (match[i].key == 0) break;
         if (strcmp(key, match[i].key) == 0) {
@@ -101,8 +100,8 @@ Image LoadBMP32x32Image(cstr path) {
 
     AseBMP32x32 *bmpData = (AseBMP32x32 *)data.data;
     result.data          = malloc(1024 * 4);
-    for (u64 i = 0; i < 256; i++) {
-        i32 iData          = i * 4;
+    for (u32 i = 0; i < 256; i++) {
+        u32 iData          = i * 4;
         result.data[iData] = bmpData->rgbq[i].r;
         result.data[iData] = bmpData->rgbq[i].g;
         result.data[iData] = bmpData->rgbq[i].b;
@@ -171,10 +170,10 @@ void ProcessGamepads(GamepadState *gamepads) {
         new.lStart = old.lEnd;
         new.rStart = old.rEnd;
 
-        f32 stickLX = (f32)(gamepad->sThumbLX) / (gamepad->sThumbLX < 0 ? -32768.0f : 32767.0);
-        f32 stickLY = (f32)(gamepad->sThumbLY) / (gamepad->sThumbLY < 0 ? -32768.0f : 32767.0);
-        f32 stickRX = (f32)(gamepad->sThumbRX) / (gamepad->sThumbRX < 0 ? -32768.0f : 32767.0);
-        f32 stickRY = (f32)(gamepad->sThumbRY) / (gamepad->sThumbRY < 0 ? -32768.0f : 32767.0);
+        f32 stickLX = (f32)(gamepad->sThumbLX) / (gamepad->sThumbLX < 0 ? -32768.0f : 32767.0f);
+        f32 stickLY = (f32)(gamepad->sThumbLY) / (gamepad->sThumbLY < 0 ? -32768.0f : 32767.0f);
+        f32 stickRX = (f32)(gamepad->sThumbRX) / (gamepad->sThumbRX < 0 ? -32768.0f : 32767.0f);
+        f32 stickRY = (f32)(gamepad->sThumbRY) / (gamepad->sThumbRY < 0 ? -32768.0f : 32767.0f);
 
         new.lEnd = (v2){stickLX, stickLY};
         new.rEnd = (v2){stickRX, stickRY};
@@ -294,6 +293,7 @@ Shader NewShader(cstr vertFile, cstr fragFile) {
 void UseShader(Shader shader) {
     glUseProgram(shader.id);
     Graphics()->activeShader = shader.id;
+    SetUniform1f("gScale", Settings()->scale);
     SetUniform2f("camera", Graphics()->cam.pos);
 }
 
@@ -327,7 +327,7 @@ void SetUniform1f(cstr name, f32 value) {
 }
 
 void SetUniform1fv(cstr name, f32 *value, u64 count) {
-    glUniform1fv(glGetUniformLocation(Graphics()->activeShader, name), count, value);
+    glUniform1fv(glGetUniformLocation(Graphics()->activeShader, name), (i32)count, value);
 }
 
 void SetUniform2f(cstr name, v2 value) {
@@ -519,7 +519,6 @@ void DrawTexture(Texture tex, v2 pos, f32 scale) {
     SetUniform2f("res", GetResolution());
     SetUniform2f("pos", pos);
     SetUniform1f("scale", scale);
-    SetUniform1f("globalScale", Settings()->scale);
     SetUniform2f("size", (v2){tex.size.x, tex.size.y});
     SetUniform4f("color", WHITE);
     UseTexture(tex);
@@ -669,7 +668,7 @@ Tilemap NewTilemap(Tileset tileset, v2 size) {
     return result;
 }
 
-void DrawTilemap(const Tilemap *tilemap, v2 pos, f32 scale, bool twoColor, i32 width) {
+void DrawTilemap(const Tilemap *tilemap, v2 pos, f32 scale, i32 width) {
     UseShader(Graphics()->shaders[SHADER_Tiled]);
     SetUniform2f("tile_size", tilemap->tileset.tileSize);
     v2i tilesetSize = (v2i){
@@ -682,8 +681,6 @@ void DrawTilemap(const Tilemap *tilemap, v2 pos, f32 scale, bool twoColor, i32 w
     SetUniform2f("res", GetResolution());
     SetUniform2f("pos", pos);
     SetUniform1f("scale", scale ? scale * 2 : 2);
-    SetUniform1f("globalScale", Settings()->scale);
-    SetUniform1b("two_color", twoColor);
     SetUniform1i("tex0", 0);
 
     UseTexture(tilemap->tileset.tex);
@@ -695,13 +692,6 @@ void DrawTilemap(const Tilemap *tilemap, v2 pos, f32 scale, bool twoColor, i32 w
     glBindBuffer(GL_ARRAY_BUFFER, tilemap->idVbo);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(i32) * size, tilemap->instIdx);
 
-    if (twoColor) {
-        glBindBuffer(GL_ARRAY_BUFFER, tilemap->colForeVbo);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v4) * size, tilemap->instForeColor);
-        glBindBuffer(GL_ARRAY_BUFFER, tilemap->colBackVbo);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v4) * size, tilemap->instBackColor);
-    }
-
     glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, size);
 }
 
@@ -712,37 +702,6 @@ void TilemapLoadCsv(Tilemap *tilemap, cstr csvPath) {
         i32 num             = 0;
         tilemap->instIdx[i] = num;
     }
-}
-
-void WriteText(cstr text, Tilemap *tilemap, i32 width, v2 pos, f32 scale) {
-    i32  iText = 0, iBox = 0, nextSpace = 0;
-    bool addWhitespace = false;
-
-    f32 size = tilemap->size.x * tilemap->size.y;
-    while (iText < strlen(text) && iBox < size) {
-        if (!addWhitespace)
-            for (int i = 0; i < strlen(text); i++) {
-                if (text[i] == ' ' || (i == strlen(text) - 1)) {
-                    nextSpace = i - iText;
-                    break;
-                }
-            }
-
-        addWhitespace          = nextSpace >= tilemap->size.x - (iBox % (u32)tilemap->size.x);
-        tilemap->instIdx[iBox] = !addWhitespace ? 0 : 0;
-
-        iText += !addWhitespace ? 1 : 0;
-        iBox += 1;
-
-        addWhitespace = addWhitespace && ((iBox & (u32)tilemap->size.x) != 0);
-    }
-
-    if (strlen(text) < size)
-        for (int i = iBox; i < size; i++) {
-            tilemap->instIdx[i] = 0;
-        }
-
-    DrawTilemap(tilemap, pos, scale, true, width);
 }
 
 void ParseShaderAttribs(const char *filename, ShaderAttrib *attribs, int *attribCount) {
@@ -816,7 +775,8 @@ GraphicsCtx InitGraphics(const WindowCtx *ctx, const GameSettings *settings) {
     InitOpenGL(ctx->window, settings);
 
     result.shaders[SHADER_Default] = NewShader(0, 0);
-    result.shaders[SHADER_Tiled]   = NewShader("shaders\\tiled.vert", "shaders\\tiled.frag");
+    result.shaders[SHADER_Tiled]   = NewShader("shaders\\tiled.vert", 0);
+    result.shaders[SHADER_Text]    = NewShader("shaders\\text.vert", "shaders\\text.frag");
     result.shaders[SHADER_Rect]    = NewShader("shaders\\rect.vert", "shaders\\rect.frag");
     result.shaders[SHADER_Line]    = NewShader("shaders\\line.vert", "shaders\\line.frag");
     result.squareMesh              = NewMesh(squareVerts, 20, squareIds, 6);
@@ -827,17 +787,15 @@ GraphicsCtx InitGraphics(const WindowCtx *ctx, const GameSettings *settings) {
     return result;
 }
 
-__declspec(dllexport) void EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(),
-                                          void (*draw)()) {
+export void EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(), void (*draw)()) {
     E->Game.Setup  = setup;
     E->Game.Init   = init;
     E->Game.Update = update;
     E->Game.Draw   = draw;
 }
 
-__declspec(dllexport) void EngineInit() {
+export void EngineInit() {
     srand((u32)time(0));
-    E->Game.Setup();
 
     E->Window   = InitWindow();
     E->Graphics = InitGraphics(&E->Window, &E->Settings);
@@ -848,8 +806,7 @@ __declspec(dllexport) void EngineInit() {
     E->Game.Init();
 }
 
-void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx *graphics,
-                   bool disableMouse) {
+void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx *graphics) {
     u64 endCycleCount    = __rdtsc();
     u64 cyclesElapsed    = endCycleCount - timing->lastCycleCount;
     f64 mgCyclesPerFrame = (f64)(cyclesElapsed) / (1000.0 * 1000.0);
@@ -861,16 +818,17 @@ void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx
             GetSecondsElapsed(timing->perfCountFreq, timing->lastCounter, GetWallClock());
     }
 
-    f32 msPerFrame = timing->delta * 1000.0f;
-    f32 msBehind   = (timing->delta - timing->targetSpf) * 1000.0f;
-    f64 fps        = (f64)(timing->perfCountFreq) / (f64)(GetWallClock() - timing->lastCounter);
+    // f32 msPerFrame = timing->delta * 1000.0f;
+    // f32 msBehind   = (timing->delta - timing->targetSpf) * 1000.0f;
+    // f64 fps        = (f64)(timing->perfCountFreq) / (f64)(GetWallClock() - timing->lastCounter);
+    // printf("[Info] [%s] FPS: %.2f MsPF: %.2f Ms behind: %.4f", __func__, fps, msPerFrame, msBehind);
 
     UseFramebuffer(graphics->postprocessing);
     {
-        ClearScreen((v4){0.3, 0.2, 0.4, 1});
+        ClearScreen((v4){0.3f, 0.2f, 0.4f, 1.0f});
         E->Game.Draw();
         CameraEnd();
-        if (!disableMouse) DrawTexture(graphics->mouse, Mouse(), 1.0f);
+        if (!Settings()->disableMouse) DrawTexture(graphics->mouse, Mouse(), 1 / Settings()->scale);
     }
     DrawFramebuffer(graphics->postprocessing);
 
@@ -881,7 +839,7 @@ void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx
     timing->lastCycleCount = endCycleCount;
 }
 
-__declspec(dllexport) void EngineUpdate() {
+export void EngineUpdate() {
     ProcessKeyboard(E->Input.keys, &E->Window.running);
     ProcessGamepads(E->Input.gamepads);
     ProcessMouse(&E->Input.mouse);
@@ -900,18 +858,21 @@ __declspec(dllexport) void EngineUpdate() {
     for (i32 i = 0; i < SHADER_COUNT; i++) ReloadShader(&E->Graphics.shaders[i]);
 
     E->Game.Update();
-    TimeAndRender(&E->Timing, &E->Window, &E->Graphics, E->Settings.disableMouse);
+    TimeAndRender(&E->Timing, &E->Window, &E->Graphics);
 }
 
-__declspec(dllexport) void EngineShutdown() {
+export void EngineShutdown() {
     ShutdownAudio(&E->Audio);
 }
 
-__declspec(dllexport) void *EngineGetMemory() {
-    return E;
+export void *EngineGetMemory() {
+    if (E)
+        return E;
+    else
+        LOG_FATAL("Engine context not loaded");
 }
 
-__declspec(dllexport) bool EngineIsRunning() {
+export bool EngineIsRunning() {
     return E->Window.running;
 }
 
@@ -1029,20 +990,14 @@ WindowCtx InitWindow() {
         .lpszClassName = (LPCWSTR)Settings()->name,
     };
 
-    if (RegisterClassW(&window_class) == 0) {
-        printf("[Fatal] [%s] Failed to register window", __func__);
-        return (WindowCtx){0};
-    }
+    if (RegisterClassW(&window_class) == 0) LOG_FATAL("Failed to register window")
 
     buffer.window =
         CreateWindowExW(0, window_class.lpszClassName, (LPCWSTR)Settings()->name,
                         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
                         CW_USEDEFAULT, CW_USEDEFAULT, size.w, size.h, 0, 0, instance, 0);
 
-    if (buffer.window == 0) {
-        printf("[Fatal] [%s] Failed to create window", __func__);
-        return (WindowCtx){0};
-    }
+    if (buffer.window == 0) LOG_FATAL("Failed to create window")
 
     buffer.dc           = GetDC(buffer.window);
     buffer.refreshRate  = GetRefreshRate(buffer.window);
@@ -1130,17 +1085,11 @@ void InitAudio(AudioCtx *ctx) {
     ctx->config.dataCallback      = AudioCallback; // called when miniaudio needs more data.
     ctx->config.pUserData         = ctx->sounds;   // Can be accessed from (device.pUserData).
 
-    if (ma_device_init(0, &ctx->config, &ctx->device) != MA_SUCCESS) {
-        printf("[Fatal] [%s] Couldn't initialize audio device\n", __func__);
-        return;
-    }
+    if (ma_device_init(0, &ctx->config, &ctx->device) != MA_SUCCESS)
+        LOG_FATAL("Couldn't initialize audio device")
 
     ma_result err = ma_device_start(&ctx->device);
-    if (err != MA_SUCCESS) {
-        printf("[Fatal] [%s] Couldn't start audio device: %d\n", __func__, err);
-        ma_device_uninit(&ctx->device);
-        return;
-    }
+    if (err != MA_SUCCESS) LOG_FATAL("Couldn't start audio device")
 
     return;
 }
@@ -1308,7 +1257,7 @@ const f32 CharmapCoords[256] = {
     ['\\'] = 84, ['$'] = 85, [163] = 86, ['['] = 87, [']'] = 88, ['<'] = 89, ['>'] = 90,
     ['\''] = 91, ['`'] = 92, ['~'] = 93};
 
-const f32 MonogramCoords[256] = {
+const i32 MonogramCoords[256] = {
     [' '] = 0,  ['!'] = 1,  ['"'] = 2,  ['#'] = 3,  ['$'] = 4,   ['%'] = 5,  ['&'] = 6,  ['\''] = 7,
     ['('] = 8,  [')'] = 9,  ['*'] = 10, ['+'] = 11, [','] = 12,  ['-'] = 13, ['.'] = 14, ['/'] = 15,
     ['0'] = 16, ['1'] = 17, ['2'] = 18, ['3'] = 19, ['4'] = 20,  ['5'] = 21, ['6'] = 22, ['7'] = 23,
@@ -1325,14 +1274,14 @@ const f32 MonogramCoords[256] = {
 void DrawText(const cstr text, v2 pos, i32 width, f32 scale) {
     Tilemap *tilemap = &Graphics()->textBox;
     if (!width) width = INT32_MAX;
-    u32  textLen = strlen(text);
-    i32  iText = 0, iBox = 0, nextSpace = 0;
+    u64  textLen = strlen(text);
+    u32  iText = 0, iBox = 0, nextSpace = 0;
     bool addWhitespace = false;
 
     f32 size = tilemap->size.x * tilemap->size.y;
     while (iText < textLen && iBox < size) {
         if (!addWhitespace)
-            for (i32 i = iText; i < textLen; i++) {
+            for (u32 i = iText; i < textLen; i++) {
                 if (text[i] == ' ' || (i == (textLen - 1))) {
                     nextSpace = i - iText;
                     break;
@@ -1353,7 +1302,35 @@ void DrawText(const cstr text, v2 pos, i32 width, f32 scale) {
             tilemap->instIdx[i] = 0;
         }
 
-    DrawTilemap(tilemap, pos, scale, true, width);
+    UseShader(Graphics()->shaders[SHADER_Text]);
+    SetUniform2f("tile_size", tilemap->tileset.tileSize);
+    v2i tilesetSize = (v2i){
+        tilemap->tileset.tex.size.x / (i32)tilemap->tileset.tileSize.x,
+        tilemap->tileset.tex.size.y / (i32)tilemap->tileset.tileSize.y,
+    };
+
+    SetUniform2i("tileset_size", tilesetSize);
+    SetUniform1i("width", width ? width : INT32_MAX);
+    SetUniform2f("res", GetResolution());
+    SetUniform2f("pos", pos);
+    SetUniform1f("scale", scale ? scale * 2 : 2);
+    SetUniform1i("tex0", 0);
+
+    UseTexture(tilemap->tileset.tex);
+
+    glBindVertexArray(tilemap->vao);
+
+    f32 tileSize = tilemap->size.x * tilemap->size.y;
+    // on-the-fly tilemap updating
+    glBindBuffer(GL_ARRAY_BUFFER, tilemap->idVbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(i32) * tileSize, tilemap->instIdx);
+
+    // glBindBuffer(GL_ARRAY_BUFFER, tilemap->colForeVbo);
+    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v4) * size, tilemap->instForeColor);
+    // glBindBuffer(GL_ARRAY_BUFFER, tilemap->colBackVbo);
+    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v4) * size, tilemap->instBackColor);
+
+    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, tileSize);
 }
 
 inline bool V2InRect(v2 pos, Rect rectangle) {
@@ -1396,6 +1373,8 @@ void DrawPoly(Poly poly, v4 color, f32 thickness) {
     }
 }
 
+void DrawCircle(v2 pos, v4 color, f32 radius) {}
+
 internal v2 Win32GetMouse() {
     POINT pt = {0};
     if (GetCursorPos(&pt) == false) return (v2){0};
@@ -1409,7 +1388,7 @@ internal v2 Win32GetMouse() {
 
 // ===== FILES =====
 
-__declspec(dllexport) u64 GetLastWriteTime(cstr file) {
+export u64 GetLastWriteTime(cstr file) {
     u64 result = 0;
 
     WIN32_FILE_ATTRIBUTE_DATA fileInfo;
@@ -1430,15 +1409,14 @@ string ReadEntireFile(const char *filename) {
     HANDLE file   = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING,
                                 FILE_ATTRIBUTE_NORMAL, 0);
     if (file == INVALID_HANDLE_VALUE) {
-        printf("[Error] [%s] Invalid handle", __func__);
+        LOG_ERROR("Invalid handle");
         return (string){0};
     }
 
     u32 size = GetFileSize(file, 0);
     if (size == INVALID_FILE_SIZE && GetLastError() != NO_ERROR) {
         CloseHandle(file);
-        printf("[Error] [%s] Invalid file size", __func__);
-        // LOG
+        LOG_ERROR("Invalid file size");
         return (string){0};
     }
 
@@ -1446,8 +1424,7 @@ string ReadEntireFile(const char *filename) {
 
     result.data = ALLOC(allocSize);
     if (!result.data) {
-        // LOG
-        printf("[Error] [%s] Couldn't allocate data", __func__);
+        LOG_ERROR("Couldn't allocate data");
         CloseHandle(file);
         return (string){0};
     }
@@ -1456,7 +1433,7 @@ string ReadEntireFile(const char *filename) {
     CloseHandle(file);
 
     if (!success || result.len != size) {
-        printf("[Error] [%s] Couldn't read entire file", __func__);
+        LOG_ERROR("Couldn't read entire file");
         FREE(result.data);
         return (string){0};
     }

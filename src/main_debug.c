@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define DLL_PATH "build\\game"
+#define DLL_PATH "build\\debug\\game"
 
 typedef struct GameApi {
     HMODULE  lib;
@@ -41,6 +41,10 @@ GameApi LoadApi(void *memory, int32_t version) {
     HMODULE lib = LoadLibraryA(dllBuf);
     if (!lib) return (GameApi){0};
 
+#pragma warning(push)
+#pragma warning(disable : 4113)
+#pragma warning(disable : 4133)
+#pragma warning(disable : 4047)
     GameApi api = (GameApi){
         .lib                = lib,
         .writeTime          = 0,
@@ -58,18 +62,31 @@ GameApi LoadApi(void *memory, int32_t version) {
         .EngineReloadMemory = GetProcAddress(lib, "EngineReloadMemory"),
         .GetLastWriteTime   = GetProcAddress(lib, "GetLastWriteTime"),
     };
+#pragma warning(pop)
 
     api.writeTime = api.GetLastWriteTime(dllBuf);
 
     api.EngineReloadMemory(memory);
-
     api.EngineLoadGame(api.Setup, api.Init, api.Update, api.Draw);
+    api.Setup();
 
     return api;
 }
 
+void ReloadApi(GameApi *api) {
+    uint64_t latestWriteTime = api->GetLastWriteTime(DLL_PATH ".dll");
+    if (latestWriteTime <= api->writeTime) return;
+
+    Sleep(200);
+    *api = LoadApi(api->EngineGetMemory(), api->version);
+    if (!api->lib) {
+        printf("[Fatal] [Debug] Couldn't reload dll\n");
+        return;
+    }
+}
+
 int32_t main() {
-    GameApi api = LoadApi(malloc(64 * 100'000), 0);
+    GameApi api = LoadApi(malloc(64 * 200'000'0), 0);
     if (!api.lib) {
         printf("[Fatal] [Debug] Couldn't load dll\n");
         return;
@@ -78,16 +95,7 @@ int32_t main() {
     api.EngineInit();
     while (api.EngineIsRunning()) {
         api.EngineUpdate();
-
-        uint64_t latestWriteTime = api.GetLastWriteTime(DLL_PATH ".dll");
-        if (latestWriteTime <= api.writeTime) continue;
-
-        Sleep(200);
-        api = LoadApi(api.EngineGetMemory(), api.version);
-        if (!api.lib) {
-            printf("[Fatal] [Debug] Couldn't reload dll\n");
-            return;
-        }
+        ReloadApi(&api);
     }
     api.EngineShutdown();
 }

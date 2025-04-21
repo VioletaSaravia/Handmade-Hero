@@ -6,12 +6,13 @@ typedef struct {
 GameState *S;
 
 export void Setup() {
-    *Settings() = (GameSettings){
+    E->Settings = (GameSettings){
         .name       = (cstr)L"Test Game",
         .version    = "0.2",
         .resolution = (v2i){640, 360},
-        .scale      = 1,
+        .scale      = 2,
     };
+    S = (GameState *)((u8 *)EngineGetMemory() + sizeof(EngineCtx));
 }
 
 export void Init() {}

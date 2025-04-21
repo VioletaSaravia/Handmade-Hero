@@ -9,11 +9,11 @@
 // ==== BASE TYPES =====
 
 #ifdef _WIN32
-    #define export __declspec(dllexport)
+#define export __declspec(dllexport)
 #elif defined(__GNUC__) && __GNUC__ >= 4
-    #define export __attribute__((visibility("default")))
+#define export __attribute__((visibility("default")))
 #else
-    #define export
+#define export
 #endif
 
 #define internal static
@@ -350,7 +350,7 @@ void f32dUpdate(f32d *val, const Damper *damper, f32 delta, f32 x) {
     val->_xp = x;
     val->y   = val->y + delta * val->_yd;
 
-    f32 k2Stable = MAX(damper->_k2, 1.1 * (delta * delta / 4 + delta * damper->_k1 / 2));
+    f32 k2Stable = MAX(damper->_k2, 1.1f * (delta * delta / 4 + delta * damper->_k1 / 2));
     val->_yd =
         val->_yd + delta * (x + damper->_k3 * xd - val->y - damper->_k1 * val->_yd) / k2Stable;
 }
@@ -636,6 +636,7 @@ void DrawMesh(Mesh mesh);
 typedef enum {
     SHADER_Default,
     SHADER_Tiled,
+    SHADER_Text,
     SHADER_Rect,
     SHADER_Line,
     SHADER_COUNT,
@@ -702,7 +703,7 @@ typedef struct Tilemap {
     u32     width;
 } Tilemap;
 Tilemap NewTilemap(Tileset tileset, v2 size);
-void    DrawTilemap(const Tilemap *tilemap, v2 pos, f32 scale, bool twoColor, i32 width);
+void    DrawTilemap(const Tilemap *tilemap, v2 pos, f32 scale, i32 width);
 void    TilemapLoadCsv(Tilemap *tilemap, cstr csvPath);
 void    DrawText(const cstr text, v2 pos, i32 width, f32 scale);
 
@@ -766,9 +767,10 @@ f32 Delta();
 __declspec(dllexport) u64 GetLastWriteTime(cstr file);
 string                    ReadEntireFile(const char *filename);
 
+// TODO
 typedef struct {
     u8  *data;
-    u64 *map; // TODO
+    u64 *map;
     u64  count;
 } DataPak;
 DataPak NewDataPak(cstr folder);
@@ -793,15 +795,20 @@ typedef enum { GUI_RELEASED, GUI_JUSTRELEASED, GUI_HOVERED, GUI_PRESSED, GUI_JUS
 GuiState GuiButton(Rect button, cstr text);
 GuiState GuiSlider(f32 *val, Rect coords, f32 from, f32 to);
 
+typedef struct TextBox TextBox;
+TextBox                NewTextBox(v2 size);
+void                   DrawTextBox(TextBox *box);
+
 // ===== DEBUG =====
 
 void DrawRectangle(Rect rect, v4 color, f32 radius);
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness);
+void DrawCircle(v2 pos, v4 color, f32 radius);
 void DrawPoly(Poly poly, v4 color, f32 thickness);
 
 typedef enum { LEVEL_INFO, LEVEL_WARNING, LEVEL_ERROR, LEVEL_FATAL } LogLevel;
 
-void Log(LogLevel level, cstr ctx, cstr msg) {
+inline void Log(LogLevel level, cstr ctx, cstr msg) {
     cstr logLevel = level == LEVEL_FATAL     ? "Fatal"
                     : level == LEVEL_ERROR   ? "Error"
                     : level == LEVEL_WARNING ? "Warning"
@@ -810,7 +817,7 @@ void Log(LogLevel level, cstr ctx, cstr msg) {
     printf("[%s] [%s] [%s] %s\n", __TIMESTAMP__, logLevel, ctx, msg);
 }
 
-#define LOG_LEVEL 2
+#define LOG_LEVEL 0
 
 #if LOG_LEVEL <= 0
 #define LOG_INFO(msg) Log(LEVEL_INFO, __func__, msg)
@@ -831,7 +838,7 @@ void Log(LogLevel level, cstr ctx, cstr msg) {
 #endif
 
 #if LOG_LEVEL <= 3
-#define LOG_FATAL(msg) Log(LEVEL_FATAL, __func__, msg)
+#define LOG_FATAL(msg) {Log(LEVEL_FATAL, __func__, msg); abort();};
 #else
 #define LOG_FATAL(msg)
 #endif

@@ -9,10 +9,10 @@
                 "/Zi",
                 "/EHsc",
                 "/nologo",
-                "/Fo${workspaceFolder}\\build\\",
-                "/Fd${workspaceFolder}\\build\\",
-                "/Fe${workspaceFolder}\\build\\main.exe",
-                "${workspaceFolder}\\src\\main_debug.c",
+                "/Fo${workspaceFolder}\\build\\debug\\",
+                "/Fd${workspaceFolder}\\build\\debug\\",
+                "/Fe${workspaceFolder}\\build\\debug\\main.exe",
+                "${workspaceFolder}\\src\\main_debug.c"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -36,18 +36,20 @@
             "args": [
                 "/DDEBUG",
                 "/MP",
+                "/W1",
                 // "/Zi",
                 "/EHsc",
                 "/nologo",
-                "/Fo${workspaceFolder}\\build\\",
-                "/Fd${workspaceFolder}\\build\\",
-                "/Fe${workspaceFolder}\\build\\game.dll",
+                "/Fo${workspaceFolder}\\build\\debug\\",
+                "/Fd${workspaceFolder}\\build\\debug\\",
+                "/Fe${workspaceFolder}\\build\\debug\\game.dll",
                 "/I${workspaceFolder}\\vendor\\",
                 "${workspaceFolder}\\src\\game.c",
                 // "${workspaceFolder}\\vendor\\glad.c",
                 // "${workspaceFolder}\\vendor\\miniaudio.c",
                 // "${workspaceFolder}\\vendor\\stb_image.c",
-                "/link /INCREMENTAL:NO build\\miniaudio.obj build\\glad.obj build\\stb_image.obj User32.lib Gdi32.lib Winmm.lib opengl32.lib xinput.lib",
+                "/link /INCREMENTAL:NO build\\debug\\miniaudio.obj build\\debug\\glad.obj build\\debug\\stb_image.obj User32.lib Gdi32.lib Winmm.lib opengl32.lib xinput.lib",
+                // "/link /INCREMENTAL:NO User32.lib Gdi32.lib Winmm.lib opengl32.lib xinput.lib",
                 "/DLL"
             ],
             "options": {
@@ -72,12 +74,13 @@
                 "/O2",
                 "/EHsc",
                 "/nologo",
+                "/Fo${workspaceFolder}\\build\\win32\\",
                 "/I${workspaceFolder}\\vendor\\",
                 "${workspaceFolder}\\src\\main.c",
                 "${workspaceFolder}\\vendor\\glad.c",
                 "${workspaceFolder}\\vendor\\miniaudio.c",
                 "${workspaceFolder}\\vendor\\stb_image.c",
-                "/link User32.lib Gdi32.lib Winmm.lib opengl32.lib xinput.lib",
+                "/link /NOEXP /NOIMPLIB User32.lib Gdi32.lib Winmm.lib opengl32.lib xinput.lib",
                 "/OUT:build\\win32\\main.exe"
             ],
             "options": {

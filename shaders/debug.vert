@@ -18,7 +18,7 @@ out int fragType;
 
 uniform vec2 res;
 uniform vec2 camera;
-uniform float globalScale;
+uniform float gScale;
 
 void main() {
     // Map aPos from [-1, 1] to [0, 1]

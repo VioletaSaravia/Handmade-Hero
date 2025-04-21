@@ -11,10 +11,6 @@ flat in int fragType;
 
 void main() {
     switch (fragType) {
-        case 0:
-        FragColor = vec4(0);
-        break;
-
         case 1: // LINE
         vec2 p = gl_FragCoord.xy;
 
@@ -61,6 +57,25 @@ void main() {
             float distToCorner = length(distPixels - vec2(radius));
             alpha = smoothstep(radius, radius - 1.0, distToCorner);
         }
+
+        FragColor = vec4(fragColor.rgb, fragColor.a * alpha);
+        break;
+
+        case 3: // CIRCLE
+        // Circle center in UV space is (0.5, 0.5)
+        vec2 centerUV = vec2(0.5);
+
+        // Convert UV distance to pixels
+        float dist = length((vUV - centerUV) * abs(fragSize));
+
+        // Parameters in pixels
+        float radius = 32.0; // example
+        float thickness = 4.0; // example
+        float halfThickness = thickness * 0.5;
+
+        // Base alpha using smoothstep for antialiased ring
+        float alpha = smoothstep(radius + halfThickness, radius + halfThickness - 1.0, dist)
+                * smoothstep(radius - halfThickness, radius - halfThickness + 1.0, dist);
 
         FragColor = vec4(fragColor.rgb, fragColor.a * alpha);
         break;

@@ -10,12 +10,12 @@ uniform vec2 res;
 uniform vec2 pos;
 uniform vec2 size;
 uniform float scale;
-uniform float globalScale;
+uniform float gScale;
 uniform vec2 camera;
 
 void main() {
-    vec2 pos_n = globalScale * (pos - camera) / res;
-    vec2 size_n = globalScale * scale * size / res;
+    vec2 pos_n = (pos - camera) / res;
+    vec2 size_n = gScale * scale * size / res;
 
     texCoord = aTexCoord;
 
