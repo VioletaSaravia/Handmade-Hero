@@ -22,6 +22,6 @@ export void Draw() {
     DrawText("Hello. This is the framework I'm developing for making games. This is how I write "
              "text in it. All handmade, no libraries. The only fonts supported are mono, since ttf "
              "is too difficult. But it should be fine. I do have word wrapping, though, that's "
-             "nice. I sure hope something good comes out of this!!",
+             "nice. I sure do hope something good comes out of this!!",
              (v2){8, 8}, 50, 2);
 }
