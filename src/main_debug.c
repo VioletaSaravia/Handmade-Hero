@@ -1,77 +1,93 @@
-#include "win32.h"
-#define DLL_PATH "build\\game.dll"
+#include <Windows.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
 
-bool CopyDLL(cstr to) {
-    return true;
-}
+#define DLL_PATH "build\\game"
 
-typedef struct {
-    u64   modTime;
-    i32   version;
-    void *lib;
+typedef struct GameApi {
+    HMODULE  lib;
+    uint64_t writeTime;
+    int32_t  version;
 
     void (*Setup)();
     void (*Init)();
     void (*Update)();
     void (*Draw)();
+    void (*EngineLoadGame)(void (*setup)(), void (*init)(), void (*update)(), void (*draw)());
+    void (*EngineInit)();
+    void (*EngineUpdate)();
+    void (*EngineShutdown)();
+    bool (*EngineIsRunning)();
+    void *(*EngineGetMemory)();
+    void (*EngineReloadMemory)(void *memory);
+    uint64_t (*GetLastWriteTime)(char *file);
 } GameApi;
 
-GameApi LoadApi(i32 vers) {
-    u64 modTime = GetLastWriteTime(DLL_PATH);
-    if (modTime == 0) return (GameApi){0};
+GameApi LoadApi(void *memory, int32_t version) {
+    char dllBuf[7 + sizeof(DLL_PATH)];
+    char pdbBuf[7 + sizeof(DLL_PATH)];
+    snprintf(dllBuf, sizeof(dllBuf), DLL_PATH "%02d.dll", version);
+    snprintf(pdbBuf, sizeof(pdbBuf), DLL_PATH "%02d.pdb", version++);
 
-    GameApi result = {0};
-
-    char game_dll_name[256];
-    snprintf(game_dll_name, sizeof(game_dll_name), "game_%d.dll", vers);
-    if (!CopyDLL(game_dll_name)) {
+    if (!CopyFile(DLL_PATH ".dll", dllBuf, false)) {
+        printf("[Error] [%s] Couldn't copy file, code %i\n", __func__, GetLastError());
         return (GameApi){0};
     }
-
-    bool ok = initialize_symbols(&result, game_dll_name, "Game", "lib");
-    if (!ok) {
-        printf("Failed initializing symbols: %s\n", last_dynlib_error());
-        return (GameApi){0};
+    // TODO
+    if (!CopyFile(DLL_PATH ".pdb", pdbBuf, false)) {
+        printf("[Warning] [%s] Couldn't copy file, code %i\n", __func__, GetLastError());
     }
+    HMODULE lib = LoadLibraryA(dllBuf);
+    if (!lib) return (GameApi){0};
 
-    result.version = vers;
-    result.modTime = modTime;
+    GameApi api = (GameApi){
+        .lib                = lib,
+        .writeTime          = 0,
+        .version            = version,
+        .Setup              = GetProcAddress(lib, "Setup"),
+        .Init               = GetProcAddress(lib, "Init"),
+        .Update             = GetProcAddress(lib, "Update"),
+        .Draw               = GetProcAddress(lib, "Draw"),
+        .EngineLoadGame     = GetProcAddress(lib, "EngineLoadGame"),
+        .EngineInit         = GetProcAddress(lib, "EngineInit"),
+        .EngineUpdate       = GetProcAddress(lib, "EngineUpdate"),
+        .EngineShutdown     = GetProcAddress(lib, "EngineShutdown"),
+        .EngineIsRunning    = GetProcAddress(lib, "EngineIsRunning"),
+        .EngineGetMemory    = GetProcAddress(lib, "EngineGetMemory"),
+        .EngineReloadMemory = GetProcAddress(lib, "EngineReloadMemory"),
+        .GetLastWriteTime   = GetProcAddress(lib, "GetLastWriteTime"),
+    };
 
-    return result;
+    api.writeTime = api.GetLastWriteTime(dllBuf);
+
+    api.EngineReloadMemory(memory);
+
+    api.EngineLoadGame(api.Setup, api.Init, api.Update, api.Draw);
+
+    return api;
 }
 
-void UnloadApi(GameApi *api) {}
-
-i32 main() {
-    i32     apiVersion = 0;
-    GameApi game       = LoadApi(apiVersion++);
-
-    srand((u32)time(0));
-
-    MemRegion buffer = NewMemRegion(sizeof(EngineCtx)); //+ sizeof(GameState));
-    // E                = (EngineCtx *)BufferAlloc(&buffer, sizeof(EngineCtx));
-    // S             = (GameState *)BufferAlloc(&buffer, sizeof(GameState));
-
-    GameLoad(game.Setup, game.Init, game.Update, game.Draw);
-
-    GameEngineInit();
-    while (GameIsRunning()) {
-        GameEngineUpdate();
-
-        u64 dllMod = GetLastWriteTime(DLL_PATH);
-        if (game.modTime == dllMod) continue;
-
-        GameApi new = LoadApi(apiVersion);
-        void *old   = GameGetMemory();
-
-        game = new;
-        GameReloadMemory(old);
-        GameLoad(game.Setup, game.Init, game.Update, game.Draw);
-
-        apiVersion++;
+int32_t main() {
+    GameApi api = LoadApi(malloc(64 * 100'000), 0);
+    if (!api.lib) {
+        printf("[Fatal] [Debug] Couldn't load dll\n");
+        return;
     }
 
-    GameEngineShutdown();
+    api.EngineInit();
+    while (api.EngineIsRunning()) {
+        api.EngineUpdate();
 
-    FREE(buffer.data);
+        uint64_t latestWriteTime = api.GetLastWriteTime(DLL_PATH ".dll");
+        if (latestWriteTime <= api.writeTime) continue;
+
+        Sleep(200);
+        api = LoadApi(api.EngineGetMemory(), api.version);
+        if (!api.lib) {
+            printf("[Fatal] [Debug] Couldn't reload dll\n");
+            return;
+        }
+    }
+    api.EngineShutdown();
 }

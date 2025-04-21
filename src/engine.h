@@ -8,6 +8,14 @@
 
 // ==== BASE TYPES =====
 
+#ifdef _WIN32
+    #define export __declspec(dllexport)
+#elif defined(__GNUC__) && __GNUC__ >= 4
+    #define export __attribute__((visibility("default")))
+#else
+    #define export
+#endif
+
 #define internal static
 #define global static
 #define persist static
@@ -122,8 +130,8 @@ typedef struct {
 
 // ===== MEMORY =====
 
-// u8 *Alloc(MemRegion *buf, u32 size);
-// u8 *RingAlloc(MemRegion *buf, u32 size);
+#define ALLOC(size) malloc(size)
+#define FREE(ptr) free(ptr)
 
 typedef struct {
     u32 count, size;
@@ -139,9 +147,6 @@ MemRegion NewMemRegion(u32 size);
 #else
 #error "Unsupported compiler"
 #endif
-
-#define ALLOC(size) malloc(size)
-#define FREE(ptr) free(ptr)
 
 // ===== MATH =====
 
@@ -745,20 +750,21 @@ typedef struct {
     void (*Update)();
     void (*Draw)();
 } GameProcs;
-extern void  GameReloadMemory(void *memory);
-extern void  GameLoad(void (*setup)(), void (*init)(), void (*update)(), void (*draw)());
-extern void  GameEngineInit();
-extern void  GameEngineUpdate();
-extern void  GameEngineShutdown();
-extern void *GameGetMemory();
-extern bool  GameIsRunning();
+__declspec(dllexport) void  EngineReloadMemory(void *memory);
+__declspec(dllexport) void  EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(),
+                                           void (*draw)());
+__declspec(dllexport) void  EngineInit();
+__declspec(dllexport) void  EngineUpdate();
+__declspec(dllexport) void  EngineShutdown();
+__declspec(dllexport) void *EngineGetMemory();
+__declspec(dllexport) bool  EngineIsRunning();
 
 f32 Delta();
 
 // ===== FILES =====
 
-u64    GetLastWriteTime(cstr file);
-string ReadEntireFile(const char *filename);
+__declspec(dllexport) u64 GetLastWriteTime(cstr file);
+string                    ReadEntireFile(const char *filename);
 
 typedef struct {
     u8  *data;
@@ -783,11 +789,7 @@ typedef enum {
     BOTTOM_RIGHT
 } Anchor;
 
-typedef enum {
-    GUI_RELEASED,
-    GUI_HOVERED,
-    GUI_PRESSED,
-} GuiState;
+typedef enum { GUI_RELEASED, GUI_JUSTRELEASED, GUI_HOVERED, GUI_PRESSED, GUI_JUSTPRESSED } GuiState;
 GuiState GuiButton(Rect button, cstr text);
 GuiState GuiSlider(f32 *val, Rect coords, f32 from, f32 to);
 
@@ -796,3 +798,40 @@ GuiState GuiSlider(f32 *val, Rect coords, f32 from, f32 to);
 void DrawRectangle(Rect rect, v4 color, f32 radius);
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness);
 void DrawPoly(Poly poly, v4 color, f32 thickness);
+
+typedef enum { LEVEL_INFO, LEVEL_WARNING, LEVEL_ERROR, LEVEL_FATAL } LogLevel;
+
+void Log(LogLevel level, cstr ctx, cstr msg) {
+    cstr logLevel = level == LEVEL_FATAL     ? "Fatal"
+                    : level == LEVEL_ERROR   ? "Error"
+                    : level == LEVEL_WARNING ? "Warning"
+                                             : "Info";
+
+    printf("[%s] [%s] [%s] %s\n", __TIMESTAMP__, logLevel, ctx, msg);
+}
+
+#define LOG_LEVEL 2
+
+#if LOG_LEVEL <= 0
+#define LOG_INFO(msg) Log(LEVEL_INFO, __func__, msg)
+#else
+#define LOG_INFO(msg)
+#endif
+
+#if LOG_LEVEL <= 1
+#define LOG_WARNING(msg) Log(LEVEL_WARNING, __func__, msg)
+#else
+#define LOG_WARNING(msg)
+#endif
+
+#if LOG_LEVEL <= 2
+#define LOG_ERROR(msg) Log(LEVEL_ERROR, __func__, msg)
+#else
+#define LOG_ERROR(msg)
+#endif
+
+#if LOG_LEVEL <= 3
+#define LOG_FATAL(msg) Log(LEVEL_FATAL, __func__, msg)
+#else
+#define LOG_FATAL(msg)
+#endif

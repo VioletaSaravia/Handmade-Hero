@@ -6,11 +6,11 @@ i32 main() {
     E = (EngineCtx *)BufferAlloc(&memory, sizeof(EngineCtx));
     S = (GameState *)BufferAlloc(&memory, sizeof(GameState));
 
-    GameLoad(Setup, Init, Update, Draw);
+    EngineLoadGame(Setup, Init, Update, Draw);
 
-    GameEngineInit();
-    while (GameIsRunning()) GameEngineUpdate();
-    GameEngineShutdown();
+    EngineInit();
+    while (EngineIsRunning()) EngineUpdate();
+    EngineShutdown();
 
     FREE(memory.data);
 }

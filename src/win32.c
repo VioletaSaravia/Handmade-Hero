@@ -7,14 +7,6 @@
 #undef FREE
 #define FREE(ptr) VirtualFree(ptr, 0, MEM_RELEASE)
 
-u8 *RingAlloc(MemRegion *buf, u32 size) {
-    if (buf->count + size > buf->size) buf->count = 0;
-
-    u8 *result = &buf->data[buf->count];
-    buf->count += size;
-    return result;
-}
-
 MemRegion NewMemRegion(u32 size) {
     return (MemRegion){
         .count = 0,
@@ -26,6 +18,14 @@ MemRegion NewMemRegion(u32 size) {
 u8 *BufferAlloc(MemRegion *buffer, u32 count) {
     u8 *result = &buffer->data[buffer->count];
     buffer->count += count;
+    return result;
+}
+
+u8 *RingAlloc(MemRegion *buf, u32 size) {
+    if (buf->count + size > buf->size) buf->count = 0;
+
+    u8 *result = &buf->data[buf->count];
+    buf->count += size;
     return result;
 }
 
@@ -301,11 +301,15 @@ void ReloadShader(Shader *shader) {
 #ifdef DEBUG
     u64 vertTime = GetLastWriteTime(shader->vertPath);
     u64 fragTime = GetLastWriteTime(shader->fragPath);
-
     if (vertTime <= shader->vertWrite && fragTime <= shader->fragWrite) return;
 
-    *shader = NewShader(shader->vertPath, shader->fragPath);
-    printf("[Info] [%s] %s and %s succeded\n", __func__, shader->vertPath, shader->fragPath);
+    Shader newShader = NewShader(shader->vertPath, shader->fragPath);
+    if (newShader.id != 0)
+        *shader = newShader;
+    else {
+        shader->vertWrite = vertTime;
+        shader->fragWrite = fragTime;
+    }
 #endif
     return;
 }
@@ -823,14 +827,15 @@ GraphicsCtx InitGraphics(const WindowCtx *ctx, const GameSettings *settings) {
     return result;
 }
 
-extern void GameLoad(void (*setup)(), void (*init)(), void (*update)(), void (*draw)()) {
+__declspec(dllexport) void EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(),
+                                          void (*draw)()) {
     E->Game.Setup  = setup;
     E->Game.Init   = init;
     E->Game.Update = update;
     E->Game.Draw   = draw;
 }
 
-extern void GameEngineInit() {
+__declspec(dllexport) void EngineInit() {
     srand((u32)time(0));
     E->Game.Setup();
 
@@ -876,7 +881,7 @@ void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx
     timing->lastCycleCount = endCycleCount;
 }
 
-extern void GameEngineUpdate() {
+__declspec(dllexport) void EngineUpdate() {
     ProcessKeyboard(E->Input.keys, &E->Window.running);
     ProcessGamepads(E->Input.gamepads);
     ProcessMouse(&E->Input.mouse);
@@ -887,8 +892,8 @@ extern void GameEngineUpdate() {
 
     for (i32 i = 0; i < KEY_COUNT; i++) {
         ButtonState k = E->Input.keys[i];
-        if (k == JustReleased) printf("Key %d was released.\n", i);
-        if (k == JustPressed) printf("Key %d was pressed.\n", i);
+        if (k == JustReleased) LOG_INFO("Key was released");
+        if (k == JustPressed) LOG_INFO("Key was pressed");
     }
 
     ReloadShader(&E->Graphics.postprocessing.shader);
@@ -898,15 +903,15 @@ extern void GameEngineUpdate() {
     TimeAndRender(&E->Timing, &E->Window, &E->Graphics, E->Settings.disableMouse);
 }
 
-void GameEngineShutdown() {
+__declspec(dllexport) void EngineShutdown() {
     ShutdownAudio(&E->Audio);
 }
 
-extern void *GameGetMemory() {
+__declspec(dllexport) void *EngineGetMemory() {
     return E;
 }
 
-extern bool GameIsRunning() {
+__declspec(dllexport) bool EngineIsRunning() {
     return E->Window.running;
 }
 
@@ -989,8 +994,7 @@ void ResizeDIBSection(WindowCtx *window, v2i size) {
     };
 
     window->memoryLen = window->w * window->h * window->bytesPerPx;
-    window->memory =
-        (u8 *)(VirtualAlloc(0, window->memoryLen, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+    window->memory    = ALLOC(window->memoryLen);
 }
 
 u32 GetRefreshRate(HWND hWnd) {
@@ -1040,9 +1044,11 @@ WindowCtx InitWindow() {
         return (WindowCtx){0};
     }
 
-    buffer.dc          = GetDC(buffer.window);
-    buffer.refreshRate = GetRefreshRate(buffer.window);
-    buffer.running     = 1;
+    buffer.dc           = GetDC(buffer.window);
+    buffer.refreshRate  = GetRefreshRate(buffer.window);
+    buffer.running      = 1;
+    buffer.windowedRect = rect;
+    buffer.fullscreen   = false;
 
     return buffer;
 }
@@ -1205,9 +1211,9 @@ TimingCtx InitTiming(f32 refreshRate) {
     return result;
 }
 
-extern void GameReloadMemory(void *memory) {
+extern void EngineReloadMemory(void *memory) {
     // TODO DLL Reloading
-    // E = memory;
+    E = memory;
     // FIXME Así se reinicia el dll? Hace falta?
     if (!gladLoadGLLoader((GLADloadproc)Win32GetProcAddress)) {
         // LOG
@@ -1261,7 +1267,7 @@ void ToggleFullscreen() {
         int w = windowedRect->right - windowedRect->left;
         int h = windowedRect->bottom - windowedRect->top;
 
-        SetWindowPos(window, HWND_NOTOPMOST, windowedRect->left, windowedRect->top, w, h,
+        SetWindowPos(window, HWND_NOTOPMOST, windowedRect->left + 64, windowedRect->top + 64, w, h,
                      SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
         RECT clientRect;
@@ -1363,27 +1369,6 @@ inline bool CollisionRectRect(Rect a, Rect b) {
     return a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
 }
 
-GuiState GuiButton(Rect button, cstr text) {
-    bool btn    = Input()->mouse.left == JustPressed;
-    bool inRect = V2InRect(Mouse(), button);
-    DrawRectangle(button, BLACK, 8);
-    DrawText(text, button.pos, 0, 1);
-    return btn && inRect ? GUI_PRESSED : inRect ? GUI_HOVERED : GUI_RELEASED;
-}
-
-GuiState GuiSlider(f32 *val, Rect coords, f32 from, f32 to) {
-    bool btn    = Input()->mouse.left == JustPressed;
-    bool inRect = V2InRect(Mouse(), coords);
-
-    DrawRectangle(coords, BLACK, 8);
-    char buf[32];
-    sprintf(buf, "%.2f", from);
-    DrawText(buf, coords.pos, 0, 1);
-    sprintf(buf, "%.2f", to);
-    DrawText(buf, v2Add(coords.pos, coords.size), 0, 1);
-    return btn && inRect ? GUI_PRESSED : inRect ? GUI_HOVERED : GUI_RELEASED;
-}
-
 void DrawRectangle(Rect rect, v4 color, f32 radius) {
     UseShader(E->Graphics.shaders[SHADER_Rect]);
     SetUniform2f("pos", rect.pos);
@@ -1424,7 +1409,7 @@ internal v2 Win32GetMouse() {
 
 // ===== FILES =====
 
-u64 GetLastWriteTime(cstr file) {
+__declspec(dllexport) u64 GetLastWriteTime(cstr file) {
     u64 result = 0;
 
     WIN32_FILE_ATTRIBUTE_DATA fileInfo;
@@ -1445,22 +1430,24 @@ string ReadEntireFile(const char *filename) {
     HANDLE file   = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING,
                                 FILE_ATTRIBUTE_NORMAL, 0);
     if (file == INVALID_HANDLE_VALUE) {
-        // LOG
+        printf("[Error] [%s] Invalid handle", __func__);
         return (string){0};
     }
 
     u32 size = GetFileSize(file, 0);
     if (size == INVALID_FILE_SIZE && GetLastError() != NO_ERROR) {
         CloseHandle(file);
+        printf("[Error] [%s] Invalid file size", __func__);
         // LOG
         return (string){0};
     }
 
     u64 allocSize = size + 1;
 
-    result.data = (char *)VirtualAlloc(0, allocSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    result.data = ALLOC(allocSize);
     if (!result.data) {
         // LOG
+        printf("[Error] [%s] Couldn't allocate data", __func__);
         CloseHandle(file);
         return (string){0};
     }
@@ -1469,8 +1456,8 @@ string ReadEntireFile(const char *filename) {
     CloseHandle(file);
 
     if (!success || result.len != size) {
-        // LOG
-        VirtualFree(result.data, 0, MEM_RELEASE);
+        printf("[Error] [%s] Couldn't read entire file", __func__);
+        FREE(result.data);
         return (string){0};
     }
     result.data[size] = '\0';

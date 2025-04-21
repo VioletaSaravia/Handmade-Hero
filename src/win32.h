@@ -3,16 +3,12 @@
 #include <Windows.h>
 #include <Xinput.h>
 #include <glad.h>
-#include <xaudio2.h>
 
 #undef DrawText
 #undef PlaySound
 #include "engine.h"
 
-#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-
-#define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
 typedef struct GameSettings {
