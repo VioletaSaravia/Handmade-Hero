@@ -41,8 +41,8 @@ Arena NewArena(u64 size) {
     };
 }
 
-void* ArenaAlloc(Arena *arena, u64 size) {
-    void* result = (void*)((u8*)E->usedMemory + arena->offset + arena->used);
+void *ArenaAlloc(Arena *arena, u64 size) {
+    void *result = (void *)((u8 *)E->usedMemory + arena->offset + arena->used);
     arena->used += size;
     if (arena->used >= arena->size) {
         LOG_ERROR("Arena is full");
@@ -51,10 +51,10 @@ void* ArenaAlloc(Arena *arena, u64 size) {
     return result;
 }
 
-void* ArenaRingAlloc(Arena *arena, u64 size) {
+void *ArenaRingAlloc(Arena *arena, u64 size) {
     if (arena->used + size > arena->size) arena->used = 0;
 
-    void* result = (void*)((u8*)E->usedMemory + arena->offset + arena->used);
+    void *result = (void *)((u8 *)E->usedMemory + arena->offset + arena->used);
     arena->used += size;
     return result;
 }
@@ -786,7 +786,8 @@ const i32 MonogramCoords[256] = {
     ['p'] = 80, ['q'] = 81, ['r'] = 82, ['s'] = 83, ['t'] = 84,  ['u'] = 85, ['v'] = 86, ['w'] = 87,
     ['x'] = 88, ['y'] = 89, ['z'] = 90, ['{'] = 91, ['|'] = 92,  ['}'] = 93, ['~'] = 94};
 
-void DrawText(VAO* vao, Texture tex, v2 tSize, v2 tileSize, const cstr text, v2 pos, i32 width, f32 scale) {
+void DrawText(VAO *vao, Texture tex, v2 tSize, v2 tileSize, const cstr text, v2 pos, i32 width,
+              f32 scale) {
     if (!width) width = INT32_MAX;
 
     u64 textLen = strlen(text);
@@ -817,7 +818,7 @@ void DrawText(VAO* vao, Texture tex, v2 tSize, v2 tileSize, const cstr text, v2 
             continue;
         }
 
-        // ((i32*)SPTR(vao->objs[1].buf))[iBox] = !addWhitespace ? MonogramCoords[text[iText]] : 0;
+        ((i32 *)vao->objs[1].buf)[iBox] = !addWhitespace ? MonogramCoords[text[iText]] : 0;
         // if (bold) tilemap->fontVbo[iBox] = 1;
         // if (italics) tilemap->fontVbo[iBox] = 2;
         // if (bold && italics) tilemap->fontVbo[iBox] = 3;
