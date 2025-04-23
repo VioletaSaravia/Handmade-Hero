@@ -1,152 +1,6 @@
 #pragma once
-
-#include <float.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <time.h>
-
-// ==== BASE TYPES =====
-
-#ifdef _WIN32
-#define export __declspec(dllexport)
-#elif defined(__GNUC__) && __GNUC__ >= 4
-#define export __attribute__((visibility("default")))
-#else
-#define export
-#endif
-
-#define internal static
-#define global static
-#define persist static
-
-typedef float_t  f32;
-typedef double_t f64;
-
-#define PI32 3.14159265f
-#define PI64 3.141592653589793
-#define PI PI32
-#define TAU32 6.2831853f
-#define TAU64 6.283185307179586
-#define TAU TAU32
-
-typedef uint8_t  u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef int8_t  i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-
-typedef u8  b8;
-typedef u16 b16;
-typedef u32 b32;
-typedef u64 b64;
-
-typedef char *cstr;
-
-typedef struct {
-    cstr data;
-    u32  len;
-} Array;
-
-typedef Array string;
-string        String(cstr data) {
-    string result;
-    result.data = data;
-    result.len  = (u32)strlen(data);
-    return result;
-}
-
-typedef union {
-    struct {
-        f32 x, y;
-    };
-    struct {
-        f32 w, h;
-    };
-} v2;
-
-inline v2 v2Add(v2 a, v2 b) {
-    return (v2){a.x + b.x, a.y + b.y};
-}
-
-inline v2 v2Sub(v2 a, v2 b) {
-    return (v2){a.x - b.x, a.y - b.y};
-}
-
-inline v2 v2Scale(v2 a, f32 s) {
-    return (v2){a.x * s, a.y * s};
-}
-
-typedef union {
-    struct {
-        i32 x, y;
-    };
-    struct {
-        i32 w, h;
-    };
-} v2i;
-
-typedef union {
-    struct {
-        f32 x, y, z;
-    };
-    struct {
-        f32 r, g, b;
-    };
-} v3;
-
-typedef union {
-    struct {
-        f32 x, y, z, w;
-    };
-    struct {
-        f32 r, g, b, a;
-    };
-} v4;
-
-typedef union {
-    struct {
-        v2 pos, size;
-    };
-    struct {
-        f32 x, y, w, h;
-    };
-} Rect;
-inline bool V2InRect(v2 pos, Rect rectangle);
-
-typedef struct {
-    v2  pos;
-    f32 radius;
-} Circle;
-
-typedef struct {
-    v2 *verts;
-    u32 count;
-} Poly;
-
-// ===== MEMORY =====
-
-#define ALLOC(size) malloc(size)
-#define FREE(ptr) free(ptr)
-
-typedef struct {
-    u32 count, size;
-    u8 *data;
-} MemRegion;
-MemRegion NewMemRegion(u32 size);
-
-#if defined(_MSC_VER)
-#include <intrin.h>
-#define PopCnt64(x) __popcnt64(x)
-#elif defined(__EMSCRIPTEN__) || defined(__GNUC__) || defined(__clang__)
-#define PopCnt64(x) __builtin_popcountll(x)
-#else
-#error "Unsupported compiler"
-#endif
+#include "common.h"
+#include "graphics.h"
 
 // ===== MATH =====
 
@@ -269,25 +123,31 @@ v2 bezierPoint(Bezier b, float t) {
 
 // ===== ALGORITHMS =====
 
+typedef enum ComponentType ComponentType;
+
 #define MAX_COLLISIONS 4
 typedef struct {
-    cstr  key;
-    void *data;
-} KVPair;
+    cstr          key;
+    ComponentType type;
+    void         *data;
+} Component;
 
 typedef struct {
     u32 (*Hash)(const cstr);
-    KVPair (*data)[MAX_COLLISIONS];
+    Component (*data)[MAX_COLLISIONS];
     u32 size;
-} Dictionary;
-Dictionary NewDictionary(u32 size);
-void      *DictUpsert(Dictionary *dict, const cstr key, void *data);
-void      *DictInsert(Dictionary *dict, const cstr key, void *data);
-void      *DictUpdate(Dictionary *dict, const cstr key, void *data);
-void      *DictGet(const Dictionary *dict, const cstr key);
+    u32 entLen;
+    u32 entSize;
+} ComponentTable;
+ComponentTable NewComponentTable(u32 size, u32 entSize);
+void          *CompUpsert(ComponentTable *dict, const cstr key, void *data);
+void          *CompInsert(ComponentTable *dict, const cstr key, void *data);
+void          *CompUpdate(ComponentTable *dict, const cstr key, void *data);
+void          *CompGet(const ComponentTable *dict, const cstr key);
 
 u32 SimpleHash(cstr str) {
     u32 hash = 216;
+    // for (u32 i = 0; i < 4 && *str; i++) {
     while (*str) {
         hash ^= (char)(*str++);
         hash *= 167;
@@ -381,56 +241,7 @@ i32       ConvexHullCmp(const void *a, const void *b) {
 }
 
 // TODO No sorting in place
-Poly ConvexHullOfSelection(v2 *points, u32 count, b32 bitmap) {
-    Poly result = {0};
-    if (count < 3) {
-        MemRegion region = NewMemRegion(sizeof(v2) * count);
-        result.verts     = (v2 *)region.data;
-        result.count     = count;
-        for (u32 i = 0; i < count; ++i) {
-            result.verts[i] = points[i];
-        }
-        return result;
-    }
-
-    // Find pivot (lowest y, then lowest x)
-    u32 pi = 0;
-    for (u32 i = 1; i < count; ++i) {
-        if (!(bitmap & (1 << i))) continue;
-
-        if (points[i].y < points[pi].y ||
-            (points[i].y == points[pi].y && points[i].x < points[pi].x)) {
-            pi = i;
-        }
-    }
-    // Swap pivot to first position
-    v2 temp    = points[0];
-    points[0]  = points[pi];
-    points[pi] = temp;
-    pivot      = points[0];
-
-    // Sort remaining points by polar angle
-    qsort(points + 1, count - 1, sizeof(v2), ConvexHullCmp);
-
-    // Build hull
-    v2 *hull  = (v2 *)malloc(sizeof(v2) * count);
-    u32 h     = 0;
-    hull[h++] = points[0];
-    hull[h++] = points[1];
-
-    for (u32 i = 2; i < count; ++i) {
-        if (!(bitmap & (1 << i))) continue;
-
-        while (h >= 2 && CrossV2(hull[h - 2], hull[h - 1], points[i]) <= 0) {
-            --h;
-        }
-        hull[h++] = points[i];
-    }
-
-    result.verts = hull;
-    result.count = h;
-    return result;
-}
+Poly ConvexHullOfSelection(v2 *points, u32 count, b32 bitmap);
 
 // ===== IMAGE =====
 
@@ -593,131 +404,6 @@ void  PauseSound(Sound sound);
 void  StopSound(Sound sound);
 void  ResumeSound(Sound sound);
 
-// ===== GRAPHICS =====
-
-typedef struct {
-    v2  pos;
-    f32 scale;
-    f32 speed;
-} Camera;
-void CameraBegin(Camera cam);
-void CameraEnd();
-v2   GetResolution();
-v2   Mouse();
-v2   MouseInWorld(Camera cam);
-
-typedef struct {
-    u32 id;
-#ifdef DEBUG
-    cstr vertPath, fragPath;
-    u64  vertWrite, fragWrite;
-#endif
-} Shader;
-Shader NewShader(cstr vertFile, cstr fragFile);
-void   UseShader(Shader shader);
-void   ReloadShader(Shader *shader);
-void   SetUniform1i(cstr name, i32 value);
-void   SetUniform2i(cstr name, v2i value);
-void   SetUniform1f(cstr name, f32 value);
-void   SetUniform1fv(cstr name, f32 *value, u64 count);
-void   SetUniform2f(cstr name, v2 value);
-void   SetUniform3f(cstr name, v3 value);
-void   SetUniform4f(cstr name, v4 value);
-void   SetUniform1b(cstr name, bool value);
-void   PrintShaderError(u32 shader);
-void   PrintProgramError(u32 program);
-
-typedef struct {
-    u32 vao;
-} Mesh;
-Mesh NewMesh(f32 *verts, u64 vertCount, u32 *indices, u64 idxCount);
-void DrawMesh(Mesh mesh);
-
-typedef enum {
-    SHADER_Default,
-    SHADER_Tiled,
-    SHADER_Text,
-    SHADER_Rect,
-    SHADER_Line,
-    SHADER_COUNT,
-} Shaders;
-
-typedef struct {
-    u32    fbo, tex, rbo, vao;
-    Shader shader;
-} Framebuffer;
-Framebuffer NewFramebuffer(const cstr fragPath);
-void        UseFramebuffer(Framebuffer shader);
-void        DrawFramebuffer(Framebuffer shader);
-void        ResizeFramebuffer(Framebuffer shader);
-
-typedef struct Texture {
-    u32 id;
-    i32 nChan;
-    v2i size;
-} Texture;
-Texture NewTexture(const cstr path);
-Texture NewTextureFromMemory(void *memory, v2i size);
-void    UseTexture(Texture tex);
-void    DrawTexture(Texture tex, v2 pos, f32 scale);
-
-// TODO VAO instancing
-typedef struct {
-    u32  type, stride, count;
-    u64  offset;
-    bool div;
-} Attrib;
-
-typedef struct {
-    u32    id;
-    Attrib attribs[4];
-    u32    dataType, drawType;
-    i32    size;
-    void  *data;
-} BO;
-
-typedef struct {
-    u32 id;
-    BO  buffers[16];
-    i32 curAttrib;
-} VAO;
-VAO  InitVao(VAO result);
-void InitVaoFromShader(const char *shaderFile, VAO *vao);
-void UseVAO(const VAO *vao);
-
-typedef struct Tileset {
-    Texture tex;
-    v2      tileSize;
-} Tileset;
-Tileset NewTileset(const cstr path, v2 tileSize);
-
-typedef struct Tilemap {
-    Tileset tileset;
-    u32     vao, ebo;
-    u32     vbo, idVbo, posVbo;
-    u32     colForeVbo, colBackVbo;
-    v2      size;
-    i32    *instIdx;
-    v4     *instForeColor;
-    v4     *instBackColor;
-    u32     width;
-} Tilemap;
-Tilemap NewTilemap(Tileset tileset, v2 size);
-void    DrawTilemap(const Tilemap *tilemap, v2 pos, f32 scale, i32 width);
-void    TilemapLoadCsv(Tilemap *tilemap, cstr csvPath);
-void    DrawText(const cstr text, v2 pos, i32 width, f32 scale);
-
-// TODO Shader attrib parser
-typedef struct {
-    u32  location;
-    char type[32];
-    char name[64];
-} ShaderAttrib;
-void ParseShaderAttribs(const char *filename, ShaderAttrib *attribs, int *attribCount);
-u32  GlslTypeToEnum(const char *type);
-
-void ClearScreen(v4 color);
-
 // ===== ENGINE =====
 
 typedef struct GameSettings GameSettings;
@@ -750,7 +436,7 @@ typedef struct {
     void (*Init)();
     void (*Update)();
     void (*Draw)();
-} GameProcs;
+} GameCode;
 __declspec(dllexport) void  EngineReloadMemory(void *memory);
 __declspec(dllexport) void  EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(),
                                            void (*draw)());
@@ -761,6 +447,27 @@ __declspec(dllexport) void *EngineGetMemory();
 __declspec(dllexport) bool  EngineIsRunning();
 
 f32 Delta();
+i32 Time();
+
+// ===== MEMORY =====
+
+#define ALLOC(size) malloc(size)
+#define FREE(ptr) free(ptr)
+
+typedef struct MemRegion {
+    u32 count, size;
+    u8 *data;
+} MemRegion;
+MemRegion NewMemRegion(u32 size);
+
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define PopCnt64(x) __popcnt64(x)
+#elif defined(__EMSCRIPTEN__) || defined(__GNUC__) || defined(__clang__)
+#define PopCnt64(x) __builtin_popcountll(x)
+#else
+#error "Unsupported compiler"
+#endif
 
 // ===== FILES =====
 
@@ -801,11 +508,6 @@ void                   DrawTextBox(TextBox *box);
 
 // ===== DEBUG =====
 
-void DrawRectangle(Rect rect, v4 color, f32 radius);
-void DrawLine(v2 from, v2 to, v4 color, f32 thickness);
-void DrawCircle(v2 pos, v4 color, f32 radius);
-void DrawPoly(Poly poly, v4 color, f32 thickness);
-
 typedef enum { LEVEL_INFO, LEVEL_WARNING, LEVEL_ERROR, LEVEL_FATAL } LogLevel;
 
 inline void Log(LogLevel level, cstr ctx, cstr msg) {
@@ -838,7 +540,11 @@ inline void Log(LogLevel level, cstr ctx, cstr msg) {
 #endif
 
 #if LOG_LEVEL <= 3
-#define LOG_FATAL(msg) {Log(LEVEL_FATAL, __func__, msg); abort();};
+#define LOG_FATAL(msg)                                                                             \
+    {                                                                                              \
+        Log(LEVEL_FATAL, __func__, msg);                                                           \
+        abort();                                                                                   \
+    };
 #else
 #define LOG_FATAL(msg)
 #endif

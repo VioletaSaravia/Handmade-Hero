@@ -1,20 +1,18 @@
 #version 460 core
 
-// #+BUFFER
+// +BUFFER +INDEXED
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aTexCoord;
 
-// #+BUFFER
-layout(location = 2) in int instanceTile; // #+ DIV
+// +BUFFER +INSTANCED +DYNAMIC
+layout(location = 2) in int instanceTile;
+layout(location = 3) in int format;
 
-// #+BUFFER
-layout(location = 3) in vec4 foreColor; // #+ DIV
+// +BUFFER +INSTANCED +DYNAMIC
+layout(location = 4) in vec4 foreColor;
 
-// #+BUFFER
-layout(location = 4) in vec4 backColor; // #+ DIV
-
-// #+BUFFER
-layout(location = 5) in int format; // #+ DIV
+// +BUFFER +INSTANCED +DYNAMIC
+layout(location = 5) in vec4 backColor;
 
 out vec2 texCoord;
 out vec4 fore_color;
@@ -30,6 +28,7 @@ uniform vec2 camera;
 
 uniform float scale;
 uniform float gScale;
+uniform int t;
 
 void main() {
     if (instanceTile == -1) {

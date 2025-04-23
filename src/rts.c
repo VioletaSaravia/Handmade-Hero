@@ -28,7 +28,7 @@ typedef struct {
 typedef struct {
     MemRegion  buffer;
     u32        count, max;
-    Dictionary components;
+    ComponentTable components;
 } Entities;
 
 typedef struct {
@@ -55,6 +55,7 @@ extern void Setup() {
         .resolution = (v2i){640, 360},
         .scale      = 1,
     };
+    S = (GameState *)((u8 *)EngineGetMemory() + sizeof(EngineCtx));
 }
 
 extern void Init() {
@@ -71,17 +72,17 @@ extern void Init() {
     S->cam             = (Camera){(v2){0}, 1.0f, 200};
 
     S->units = (Entities){.buffer     = NewMemRegion(64 * 10000),
-                          .components = NewDictionary(64),
+                          .components = NewComponentTable(64, 64),
                           .count      = 64,
                           .max        = 64};
 
-    Dictionary *comps     = &S->units.components;
-    v2         *positions = (v2 *)DictInsert(comps, "pos", ALLOC(S->units.max * sizeof(v2)));
+    ComponentTable *comps     = &S->units.components;
+    v2         *positions = (v2 *)CompInsert(comps, "pos", ALLOC(S->units.max * sizeof(v2)));
     MoveList   *targets =
-        (MoveList *)DictInsert(comps, "targets", ALLOC(S->units.max * sizeof(MoveList)));
-    v2  *colliders = (v2 *)DictInsert(comps, "colliders", ALLOC(S->units.max * sizeof(v2)));
-    u32 *types     = (u32 *)DictInsert(comps, "types", ALLOC(S->units.max * sizeof(u32)));
-    u32 *idx       = (u32 *)DictInsert(comps, "idx", ALLOC(S->units.max * sizeof(u32)));
+        (MoveList *)CompInsert(comps, "targets", ALLOC(S->units.max * sizeof(MoveList)));
+    v2  *colliders = (v2 *)CompInsert(comps, "colliders", ALLOC(S->units.max * sizeof(v2)));
+    u32 *types     = (u32 *)CompInsert(comps, "types", ALLOC(S->units.max * sizeof(u32)));
+    u32 *idx       = (u32 *)CompInsert(comps, "idx", ALLOC(S->units.max * sizeof(u32)));
 
     for (u64 i = 0; i < S->units.count; i++) {
         positions[i] = (v2){Rand() * 640, Rand() * 360};
@@ -106,8 +107,8 @@ void ProcessWASDCamera(Camera *cam) {
 }
 
 void ProcessMouseSelection(SelectionCtx *ctx, const Entities *units, const UnitTypes *types) {
-    const v2  *pos    = DictGet(&units->components, "pos");
-    const u32 *uTypes = DictGet(&units->components, "types");
+    const v2  *pos    = CompGet(&units->components, "pos");
+    const u32 *uTypes = CompGet(&units->components, "types");
 
     switch (Input()->mouse.left) {
     case JustPressed:
@@ -117,7 +118,7 @@ void ProcessMouseSelection(SelectionCtx *ctx, const Entities *units, const UnitT
         if (Input()->keys[KEY_Shift] != Pressed) {
             ctx->selMap = 0;
         }
-        for (u64 i = 0; i < units->count; i++) {
+        for (u64 i = 0; i < units->components.entLen; i++) {
             v2i size = types->tex[uTypes[i]].size;
             if (V2InRect(MouseInWorld(S->cam),
                          (Rect){(v2){pos[i].x - size.x / 2, pos[i].y - size.y / 2},
@@ -134,7 +135,7 @@ void ProcessMouseSelection(SelectionCtx *ctx, const Entities *units, const UnitT
         if (Input()->keys[KEY_Shift] != Pressed) {
             ctx->selMap = PopCnt64(ctx->selMap) == 1 ? ctx->selMap : 0;
         }
-        for (u64 i = 0; i < units->count; i++) {
+        for (u64 i = 0; i < units->components.entLen; i++) {
             if (V2InRect(pos[i], ctx->selBox)) {
                 ctx->selMap |= (1ull << i);
             }
@@ -150,14 +151,14 @@ void ProcessMouseSelection(SelectionCtx *ctx, const Entities *units, const UnitT
 }
 
 void ProcessMovementToTarget(const SelectionCtx *ctx, Entities *units) {
-    const v2 *pos     = DictGet(&units->components, "pos");
-    MoveList *targets = DictGet(&units->components, "targets");
+    const v2 *pos     = CompGet(&units->components, "pos");
+    MoveList *targets = CompGet(&units->components, "targets");
 
     if ((!ctx->selecting) && Input()->mouse.right == JustPressed) {
         PlaySound(S->sounds[0]);
-        Rect box       = BoundingBoxOfSelection(pos, units->count, ctx->selMap);
+        Rect box       = BoundingBoxOfSelection(pos, units->components.entLen, ctx->selMap);
         v2   boxCenter = (v2){box.x + box.w / 2, box.y + box.h / 2};
-        for (u64 i = 0; i < units->count; i++) {
+        for (u64 i = 0; i < units->components.entLen; i++) {
             if (!(ctx->selMap & (1ull << i))) continue;
 
             v2 iPos         = pos[i];
@@ -187,12 +188,12 @@ void ProcessMovementToTarget(const SelectionCtx *ctx, Entities *units) {
 }
 
 void CalculateMovementToTargetWithCollision(const Entities *units, const UnitTypes *types) {
-    v2        *pos       = DictGet(&units->components, "pos");
-    MoveList  *targets   = DictGet(&units->components, "targets");
-    const u32 *uTypes    = DictGet(&units->components, "types");
-    const v2  *colliders = DictGet(&units->components, "colliders");
+    v2        *pos       = CompGet(&units->components, "pos");
+    MoveList  *targets   = CompGet(&units->components, "targets");
+    const u32 *uTypes    = CompGet(&units->components, "types");
+    const v2  *colliders = CompGet(&units->components, "colliders");
 
-    for (u32 i = 0; i < units->count; i++) {
+    for (u32 i = 0; i < units->components.entLen; i++) {
         f32 speed = types->speed[uTypes[i]];
 
         bool arrived = IsEqV2(pos[i], targets[i].target);
@@ -203,7 +204,7 @@ void CalculateMovementToTargetWithCollision(const Entities *units, const UnitTyp
         pos[i].x += move.x;
         pos[i].y += move.y;
 
-        for (u32 j = 0; j < units->count; j++) {
+        for (u32 j = 0; j < units->components.entLen; j++) {
             if (i == j) continue;
             Rect from = (Rect){pos[i], colliders[i]};
             Rect to   = (Rect){pos[j], colliders[j]};
@@ -217,7 +218,7 @@ void CalculateMovementToTargetWithCollision(const Entities *units, const UnitTyp
                 pos[i].x = pos[j].x - colliders[i].w;
         }
 
-        for (u32 j = 0; j < units->count; j++) {
+        for (u32 j = 0; j < units->components.entLen; j++) {
             if (i == j) continue;
             Rect from = (Rect){pos[i], colliders[i]};
             Rect to   = (Rect){pos[j], colliders[j]};
@@ -234,16 +235,16 @@ void CalculateMovementToTargetWithCollision(const Entities *units, const UnitTyp
 }
 
 void DrawUnits(const UnitTypes *types, const Entities *units, const SelectionCtx *ctx) {
-    const v2  *pos    = DictGet(&units->components, "pos");
-    const u32 *uTypes = DictGet(&units->components, "types");
+    const v2  *pos    = CompGet(&units->components, "pos");
+    const u32 *uTypes = CompGet(&units->components, "types");
 
-    for (u64 i = 0; i < units->count; i++) {
+    for (u64 i = 0; i < units->components.entLen; i++) {
         Texture tex = types->tex[uTypes[i]];
 
-        DrawTexture(tex, v2Sub(pos[i], (v2){tex.size.x / 2, tex.size.y / 2}), 1);
-        if (ctx->selMap & (1ull << i)) {
-            DrawTexture(ctx->selector, v2Sub(pos[i], (v2){tex.size.x / 2, tex.size.y / 2}), 1);
-        }
+        // TextureDraw(tex, v2Sub(pos[i], (v2){tex.size.x / 2, tex.size.y / 2}), 1);
+        // if (ctx->selMap & (1ull << i)) {
+        //     TextureDraw(ctx->selector, v2Sub(pos[i], (v2){tex.size.x / 2, tex.size.y / 2}), 1);
+        // }
     }
 }
 

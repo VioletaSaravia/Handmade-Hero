@@ -7,7 +7,7 @@ i32 main() {
     S = (GameState *)BufferAlloc(&memory, sizeof(GameState));
 
     EngineLoadGame(Setup, Init, Update, Draw);
-
+    Setup();
     EngineInit();
     while (EngineIsRunning()) EngineUpdate();
     EngineShutdown();

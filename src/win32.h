@@ -8,8 +8,8 @@
 #undef PlaySound
 #include "engine.h"
 
-#include "stb_image.h"
 #include "miniaudio.h"
+#include "stb_image.h"
 
 typedef struct GameSettings {
     cstr name, version;
@@ -38,7 +38,8 @@ typedef struct GraphicsCtx {
 } GraphicsCtx;
 internal void *Win32GetProcAddress(const char *name);
 internal void  InitOpenGL(HWND hWnd, const GameSettings *settings);
-internal void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx *graphics);
+internal void  TimeAndRender(TimingCtx *timing, const WindowCtx *window,
+                             const GraphicsCtx *graphics);
 
 typedef struct Sound {
     u32 id;
@@ -63,6 +64,7 @@ typedef struct AudioCtx {
 
 typedef struct TimingCtx {
     f32  delta, targetSpf;
+    i32  time;
     i64  lastCounter, lastCycleCount, perfCountFreq;
     u32  desiredSchedulerMs;
     bool granularSleepOn;
@@ -90,11 +92,12 @@ internal void  ResizeWindow(HWND hWnd, v2i size);
 internal void  LockCursorToWindow(HWND hWnd);
 
 typedef struct EngineCtx {
+    u64          usedMemory;
     GameSettings Settings;
     InputCtx     Input;
     TimingCtx    Timing;
     WindowCtx    Window;
     AudioCtx     Audio;
     GraphicsCtx  Graphics;
-    GameProcs    Game;
+    GameCode    Game;
 } EngineCtx;

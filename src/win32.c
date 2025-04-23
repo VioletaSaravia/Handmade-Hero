@@ -2,6 +2,8 @@
 
 // ===== MEMORY =====
 
+EngineCtx *E;
+
 #undef ALLOC
 #define ALLOC(size) VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
 #undef FREE
@@ -29,21 +31,55 @@ u8 *RingAlloc(MemRegion *buf, u32 size) {
     return result;
 }
 
-// ===== ALGORITHMS =====
-
-Dictionary NewDictionary(u32 size) {
-    return (Dictionary){
-        .Hash = SimpleHash,
-        .data = ALLOC(sizeof(KVPair) * 4 * size),
-        .size = size,
+Arena NewArena(u64 size) {
+    u64 offset = E->usedMemory;
+    E->usedMemory += size;
+    return (Arena){
+        .offset = offset,
+        .size   = size,
+        .used   = 0,
     };
 }
 
-void *DictUpsert(Dictionary *dict, const cstr key, void *data) {
-    KVPair *match = dict->data[dict->Hash(key) % dict->size];
+void* ArenaAlloc(Arena *arena, u64 size) {
+    void* result = (void*)((u8*)E->usedMemory + arena->offset + arena->used);
+    arena->used += size;
+    if (arena->used >= arena->size) {
+        LOG_ERROR("Arena is full");
+        return 0;
+    }
+    return result;
+}
+
+void* ArenaRingAlloc(Arena *arena, u64 size) {
+    if (arena->used + size > arena->size) arena->used = 0;
+
+    void* result = (void*)((u8*)E->usedMemory + arena->offset + arena->used);
+    arena->used += size;
+    return result;
+}
+
+void ArenaReset(Arena *arena) {
+    arena->used = 0;
+}
+
+// ===== ALGORITHMS =====
+
+ComponentTable NewComponentTable(u32 buckets, u32 entSize) {
+    return (ComponentTable){
+        .Hash    = SimpleHash,
+        .data    = ALLOC(sizeof(Component) * 4 * buckets),
+        .size    = buckets,
+        .entLen  = 0,
+        .entSize = entSize,
+    };
+}
+
+void *CompUpsert(ComponentTable *dict, const cstr key, void *data) {
+    Component *match = dict->data[dict->Hash(key) % dict->size];
     for (size_t i = 0; i < MAX_COLLISIONS; i++) {
         if (match[i].key == 0 || strcmp(key, match[i].key) == 0) {
-            match[i] = (KVPair){key, data};
+            match[i] = (Component){.key = key, .data = data};
             return match[i].data;
         }
     }
@@ -51,11 +87,11 @@ void *DictUpsert(Dictionary *dict, const cstr key, void *data) {
     printf("[Warning] [%s] Key %s exceeded maximum number of collisions\n", __func__, key);
     return 0;
 }
-void *DictInsert(Dictionary *dict, const cstr key, void *data) {
-    KVPair *match = dict->data[dict->Hash(key) % dict->size];
+void *CompInsert(ComponentTable *dict, const cstr key, void *data) {
+    Component *match = dict->data[dict->Hash(key) % dict->size];
     for (size_t i = 0; i < MAX_COLLISIONS; i++) {
         if (match[i].key == 0) {
-            match[i] = (KVPair){key, data};
+            match[i] = (Component){.key = key, .data = data};
             return match[i].data;
         }
 
@@ -67,8 +103,8 @@ void *DictInsert(Dictionary *dict, const cstr key, void *data) {
     printf("[Warning] [%s] Key %s exceeded maximum number of collisions\n", __func__, key);
     return 0;
 }
-void *DictUpdate(Dictionary *dict, const cstr key, void *data) {
-    KVPair *match = dict->data[dict->Hash(key) % dict->size];
+void *CompUpdate(ComponentTable *dict, const cstr key, void *data) {
+    Component *match = dict->data[dict->Hash(key) % dict->size];
     for (size_t i = 0; i < MAX_COLLISIONS; i++) {
         if (match[i].key == 0) break;
         if (strcmp(key, match[i].key) == 0) {
@@ -79,8 +115,8 @@ void *DictUpdate(Dictionary *dict, const cstr key, void *data) {
     printf("[Warning] [%s] Key %s not found\n", __func__, key);
     return 0;
 }
-void *DictGet(const Dictionary *dict, const cstr key) {
-    KVPair *match = dict->data[dict->Hash(key) % dict->size];
+void *CompGet(const ComponentTable *dict, const cstr key) {
+    Component *match = dict->data[dict->Hash(key) % dict->size];
     for (size_t i = 0; i < MAX_COLLISIONS; i++) {
         if (match[i].key == 0) break;
         if (strcmp(key, match[i].key) == 0) {
@@ -207,546 +243,9 @@ void ProcessMouse(MouseState *mouse) {
 
 // ===== GRAPHICS =====
 
-void CameraBegin(Camera cam) {
-    Graphics()->cam = cam;
-}
-
-void CameraEnd() {
-    Graphics()->cam = (Camera){0};
-}
-
-v2 GetResolution() {
-    RECT clientRect = {0};
-    // KB global
-    GetClientRect(Window()->window, &clientRect);
-
-    return (v2){clientRect.right - clientRect.left, clientRect.bottom - clientRect.top};
-}
-
-inline v2 Mouse() {
-    return Input()->mouse.pos;
-}
-
-v2 MouseInWorld(Camera cam) {
-    v2 mouse = Mouse();
-    return (v2){mouse.x + cam.pos.x, mouse.y + cam.pos.y};
-}
-
-Shader NewShader(cstr vertFile, cstr fragFile) {
-    Shader result = {0};
-    i32    ok     = 0;
-
-    if (!vertFile) vertFile = "shaders\\default.vert";
-    if (!fragFile) fragFile = "shaders\\default.frag";
-
-#ifdef DEBUG
-    result.vertPath = vertFile;
-    result.fragPath = fragFile;
-
-    result.vertWrite = GetLastWriteTime(result.vertPath);
-    result.fragWrite = GetLastWriteTime(result.fragPath);
-#endif
-
-    string vertSrc = ReadEntireFile(vertFile);
-    string fragSrc = ReadEntireFile(fragFile);
-
-    // FIXME(violeta): Esto es sólo para evitar errores al hacer reload.
-    // Cambiar por algo mejor.
-    while (vertSrc.data == 0) vertSrc = ReadEntireFile(vertFile);
-    while (fragSrc.data == 0) fragSrc = ReadEntireFile(fragFile);
-
-    u32 vertShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertShader, 1, &vertSrc.data, 0);
-    glCompileShader(vertShader);
-
-    glGetShaderiv(vertShader, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        PrintShaderError(vertShader);
-        return (Shader){0};
-    }
-
-    u32 fragShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragShader, 1, &fragSrc.data, 0);
-    glCompileShader(fragShader);
-    glGetShaderiv(fragShader, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        PrintShaderError(fragShader);
-        return (Shader){0};
-    }
-
-    result.id = glCreateProgram();
-    glAttachShader(result.id, vertShader);
-    glAttachShader(result.id, fragShader);
-    glLinkProgram(result.id);
-    glGetProgramiv(result.id, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        PrintProgramError(result.id);
-        return (Shader){0};
-    }
-
-    glDeleteShader(vertShader);
-    glDeleteShader(fragShader);
-
-    return result;
-}
-
-void UseShader(Shader shader) {
-    glUseProgram(shader.id);
-    Graphics()->activeShader = shader.id;
-    SetUniform1f("gScale", Settings()->scale);
-    SetUniform2f("camera", Graphics()->cam.pos);
-}
-
-void ReloadShader(Shader *shader) {
-#ifdef DEBUG
-    u64 vertTime = GetLastWriteTime(shader->vertPath);
-    u64 fragTime = GetLastWriteTime(shader->fragPath);
-    if (vertTime <= shader->vertWrite && fragTime <= shader->fragWrite) return;
-
-    Shader newShader = NewShader(shader->vertPath, shader->fragPath);
-    if (newShader.id != 0)
-        *shader = newShader;
-    else {
-        shader->vertWrite = vertTime;
-        shader->fragWrite = fragTime;
-    }
-#endif
-    return;
-}
-
-void SetUniform1i(cstr name, i32 value) {
-    glUniform1i(glGetUniformLocation(Graphics()->activeShader, name), value);
-}
-
-void SetUniform2i(cstr name, v2i value) {
-    glUniform2i(glGetUniformLocation(Graphics()->activeShader, name), value.x, value.y);
-}
-
-void SetUniform1f(cstr name, f32 value) {
-    glUniform1f(glGetUniformLocation(Graphics()->activeShader, name), value);
-}
-
-void SetUniform1fv(cstr name, f32 *value, u64 count) {
-    glUniform1fv(glGetUniformLocation(Graphics()->activeShader, name), (i32)count, value);
-}
-
-void SetUniform2f(cstr name, v2 value) {
-    glUniform2f(glGetUniformLocation(Graphics()->activeShader, name), value.x, value.y);
-}
-
-void SetUniform3f(cstr name, v3 value) {
-    glUniform3f(glGetUniformLocation(Graphics()->activeShader, name), value.x, value.y, value.z);
-}
-
-void SetUniform4f(cstr name, v4 value) {
-    glUniform4f(glGetUniformLocation(Graphics()->activeShader, name), value.x, value.y, value.z,
-                value.w);
-}
-
-void SetUniform1b(cstr name, bool value) {
-    SetUniform1i(name, (value ? 1 : 0));
-}
-
-void PrintShaderError(u32 shader) {
-    i32 logLength = 0;
-    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
-
-    char *infoLog = malloc(logLength);
-    glGetShaderInfoLog(shader, logLength, 0, infoLog);
-
-    printf("Shader compilation failed: %s\n", infoLog);
-
-    free(infoLog);
-}
-
-void PrintProgramError(u32 program) {
-    i32 logLength = 0;
-    glGetShaderiv(program, GL_INFO_LOG_LENGTH, &logLength);
-
-    char *infoLog = malloc(logLength);
-    glGetProgramInfoLog(program, logLength, 0, infoLog);
-
-    printf("Program linking failed: %s\n", infoLog);
-
-    free(infoLog);
-}
-
-Mesh NewMesh(f32 *verts, u64 vertCount, u32 *indices, u64 idxCount) {
-    Mesh result = {0};
-    u32  ebo, vbo;
-
-    glGenBuffers(1, &ebo);
-    glGenBuffers(1, &vbo);
-    glGenVertexArrays(1, &result.vao);
-
-    glBindVertexArray(result.vao);
-
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(f32) * vertCount, verts, GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(u32) * idxCount, indices, GL_STATIC_DRAW);
-
-    i32 stride = 5 * sizeof(f32);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, 0);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, (void *)(sizeof(v3)));
-    glEnableVertexAttribArray(1);
-
-    return result;
-}
-
-void DrawMesh(Mesh mesh) {
-    glBindVertexArray(mesh.vao);
-    // glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
-    glBindVertexArray(0);
-}
-
-Framebuffer NewFramebuffer(cstr fragPath) {
-    Framebuffer result = {0};
-
-    persist f32 verts[] = {-1, 1, 0, 1, -1, -1, 0, 0, 1, -1, 1, 0,
-                           -1, 1, 0, 1, 1,  -1, 1, 0, 1, 1,  1, 1};
-    u32         quadVAO, quadVBO;
-    glGenVertexArrays(1, &quadVAO);
-    glGenBuffers(1, &quadVBO);
-    glBindVertexArray(quadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(v4), 0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(v4), (void *)(sizeof(v2)));
-    glEnableVertexAttribArray(1);
-    result.vao = quadVAO;
-
-    glGenFramebuffers(1, &result.fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, result.fbo);
-
-    glGenTextures(1, &result.tex);
-    glBindTexture(GL_TEXTURE_2D, result.tex);
-    v2 res = GetResolution();
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (i32)res.w, (i32)res.h, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, result.tex, 0);
-
-    glGenRenderbuffers(1, &result.rbo);
-    glBindRenderbuffer(GL_RENDERBUFFER, result.rbo);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, (i32)res.w, (i32)res.h);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
-                              result.rbo);
-
-    while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) continue;
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    Shader shader = NewShader("shaders\\post.vert", fragPath);
-    result.shader = shader;
-
-    return result;
-}
-
-void UseFramebuffer(Framebuffer shader) {
-    glBindFramebuffer(GL_FRAMEBUFFER, shader.fbo);
-}
-
-void DrawFramebuffer(Framebuffer shader) {
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    ClearScreen((v4){0});
-
-    UseShader(shader.shader);
-    SetUniform2f("res", GetResolution());
-
-    glBindVertexArray(shader.vao);
-    glBindTexture(GL_TEXTURE_2D, shader.tex);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-}
-
-void ResizeFramebuffer(Framebuffer shader) {
-    v2 res = GetResolution();
-    glBindTexture(GL_TEXTURE_2D, shader.tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (i32)res.w, (i32)res.h, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
-
-    glBindRenderbuffer(GL_RENDERBUFFER, shader.tex);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, (i32)res.w, (i32)res.h);
-}
-
-Texture NewTexture(cstr path) {
-    v2i size;
-    i32 nChan;
-
-    string file = ReadEntireFile(path);
-
-    u8 *img = stbi_load_from_memory(file.data, file.len, &size.x, &size.y, &nChan, 0);
-
-    if (!img) {
-        printf("[Error] [%s] Couldn't load texture: %s", __func__, path);
-        return (Texture){0};
-    }
-
-    Texture result = NewTextureFromMemory((void *)img, size);
-    stbi_image_free(img);
-    return result;
-}
-
-Texture NewTextureFromMemory(void *memory, v2i size) {
-    Texture result = {.size = size};
-
-    glGenTextures(1, &result.id);
-    glBindTexture(GL_TEXTURE_2D, result.id);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    u32 format = GL_RGBA; // RGB for BMP
-
-    glTexImage2D(GL_TEXTURE_2D, 0, format, result.size.x, result.size.y, 0, format,
-                 GL_UNSIGNED_BYTE, memory);
-    // GL_GenerateMipmap(GL_TEXTURE_2D)
-
-    return result;
-}
-
-void UseTexture(Texture tex) {
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, tex.id);
-}
-
-void DrawTexture(Texture tex, v2 pos, f32 scale) {
-    UseShader(Graphics()->shaders[SHADER_Default]);
-    SetUniform2f("res", GetResolution());
-    SetUniform2f("pos", pos);
-    SetUniform1f("scale", scale);
-    SetUniform2f("size", (v2){tex.size.x, tex.size.y});
-    SetUniform4f("color", WHITE);
-    UseTexture(tex);
-    DrawMesh(Graphics()->squareMesh);
-}
-
-VAO InitVao(VAO result) {
-    glGenVertexArrays(1, &result.id);
-
-    for (size_t i = 0; i < 16; i++) {
-        if (result.buffers[i].data != 0) {
-            glGenBuffers(1, &result.buffers[i].id);
-        }
-    }
-
-    glBindVertexArray(result.id);
-
-    for (size_t i = 0; i < 16; i++) {
-        BO buf = result.buffers[i];
-        glBindBuffer(buf.dataType, buf.id);
-        glBufferData(buf.dataType, buf.size, buf.data, buf.drawType);
-
-        u64 offset = 0;
-        for (size_t j = 0; j < 4; j++) {
-            Attrib attrib = buf.attribs[j];
-            if (attrib.type == GL_FLOAT)
-                glVertexAttribPointer(result.curAttrib, attrib.count, GL_FLOAT, GL_FALSE,
-                                      attrib.stride, (void *)offset);
-            else if (attrib.type == GL_INT)
-                glVertexAttribIPointer(3, 1, GL_INT, 0, 0);
-
-            glEnableVertexAttribArray(result.curAttrib);
-
-            if (attrib.div) glVertexAttribDivisor(result.curAttrib, 1);
-
-            result.curAttrib++;
-            offset += attrib.offset;
-        }
-    }
-
-    return result;
-}
-
-void InitVaoFromShader(const char *shaderFile, VAO *vao) {
-    ShaderAttrib attribs[16];
-    int          attribCount = 0;
-    ParseShaderAttribs(shaderFile, attribs, &attribCount);
-
-    vao->id        = 1;
-    vao->curAttrib = 0;
-
-    for (int i = 0; i < attribCount; i++) {
-        Attrib attr;
-        attr.type   = 0; // you can map GLSL types to OpenGL types if needed
-        attr.count  = GlslTypeToEnum(attribs[i].type);
-        attr.stride = 0; // fill this if you have buffer layouts
-        attr.offset = 0; // likewise
-        attr.div    = false;
-
-        vao->buffers[0].attribs[attribs[i].location] = attr;
-        vao->curAttrib++;
-    }
-}
-
-void UseVAO(const VAO *vao) {
-    glBindVertexArray(vao->id);
-
-    for (size_t i = 0; i < 16; i++) {
-        BO buf = vao->buffers[i];
-        if (buf.drawType == GL_DYNAMIC_DRAW) {
-            glBindBuffer(buf.dataType, buf.id);
-            glBufferSubData(buf.dataType, 0, buf.size, buf.data);
-        }
-    }
-}
-
-Tileset NewTileset(const cstr path, v2 tileSize) {
-    return (Tileset){.tex = NewTexture(path), .tileSize = tileSize};
-}
-
-Tilemap NewTilemap(Tileset tileset, v2 size) {
-    Tilemap result       = {.size = size};
-    result.instIdx       = ALLOC(sizeof(i32) * size.x * size.y);
-    result.instForeColor = ALLOC(sizeof(v4) * size.x * size.y);
-    result.instBackColor = ALLOC(sizeof(v4) * size.x * size.y);
-
-    persist f32 quadVertices[] = {0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1};
-    persist i32 quadIndices[]  = {0, 1, 2, 2, 3, 0};
-
-    result.tileset = tileset;
-
-    result.width = size.x * tileset.tileSize.x;
-
-    glGenVertexArrays(1, &result.vao);
-    glGenBuffers(1, &result.vbo);
-    glGenBuffers(1, &result.ebo);
-    glGenBuffers(1, &result.idVbo);
-    glGenBuffers(1, &result.posVbo);
-    glGenBuffers(1, &result.colForeVbo);
-    glGenBuffers(1, &result.colBackVbo);
-    glBindVertexArray(result.vao);
-
-    // VERTEX VBO
-    glBindBuffer(GL_ARRAY_BUFFER, result.vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), 0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), (void *)sizeof(v2));
-    glEnableVertexAttribArray(1);
-
-    // INDEX VBO
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, result.ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(quadIndices), quadIndices, GL_STATIC_DRAW);
-
-    // INSTANCE ID VBO
-    glBindBuffer(GL_ARRAY_BUFFER, result.idVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(i32) * size.x * size.y, result.instIdx, GL_DYNAMIC_DRAW);
-
-    glVertexAttribIPointer(2, 1, GL_INT, 0, 0);
-    glEnableVertexAttribArray(2);
-    glVertexAttribDivisor(2, 1);
-
-    // INSTANCE FORE COLOR VBO
-    glBindBuffer(GL_ARRAY_BUFFER, result.colForeVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(v4) * size.x * size.y, result.instForeColor,
-                 GL_DYNAMIC_DRAW);
-
-    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 0, 0);
-    glEnableVertexAttribArray(3);
-    glVertexAttribDivisor(3, 1);
-
-    // INSTANCE BACK COLOR VBO
-    glBindBuffer(GL_ARRAY_BUFFER, result.colBackVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(v4) * size.x * size.y, result.instBackColor,
-                 GL_DYNAMIC_DRAW);
-
-    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 0, 0);
-    glEnableVertexAttribArray(4);
-    glVertexAttribDivisor(4, 1);
-
-    for (int i = 0; i < size.x * size.y; i++) {
-        result.instForeColor[i] = (v4){1, 1, 1, 1};
-        result.instBackColor[i] = (v4){0};
-    }
-
-    return result;
-}
-
-void DrawTilemap(const Tilemap *tilemap, v2 pos, f32 scale, i32 width) {
-    UseShader(Graphics()->shaders[SHADER_Tiled]);
-    SetUniform2f("tile_size", tilemap->tileset.tileSize);
-    v2i tilesetSize = (v2i){
-        tilemap->tileset.tex.size.x / tilemap->tileset.tileSize.x,
-        tilemap->tileset.tex.size.y / tilemap->tileset.tileSize.y,
-    };
-
-    SetUniform2i("tileset_size", tilesetSize);
-    SetUniform1i("width", width ? width : INT32_MAX);
-    SetUniform2f("res", GetResolution());
-    SetUniform2f("pos", pos);
-    SetUniform1f("scale", scale ? scale * 2 : 2);
-    SetUniform1i("tex0", 0);
-
-    UseTexture(tilemap->tileset.tex);
-
-    glBindVertexArray(tilemap->vao);
-
-    f32 size = tilemap->size.x * tilemap->size.y;
-    // on-the-fly tilemap updating
-    glBindBuffer(GL_ARRAY_BUFFER, tilemap->idVbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(i32) * size, tilemap->instIdx);
-
-    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, size);
-}
-
-void TilemapLoadCsv(Tilemap *tilemap, cstr csvPath) {
-    u8 *data = 0;
-    // TODO Load Tiled CSVs
-    for (int i = 0; i < tilemap->size.x * tilemap->size.y; i++) {
-        i32 num             = 0;
-        tilemap->instIdx[i] = num;
-    }
-}
-
-void ParseShaderAttribs(const char *filename, ShaderAttrib *attribs, int *attribCount) {
-    FILE *file = fopen(filename, "r");
-    if (!file) {
-        perror("Failed to open shader file");
-        exit(EXIT_FAILURE);
-    }
-
-    char line[512];
-    *attribCount = 0;
-
-    while (fgets(line, sizeof(line), file)) {
-        if (strstr(line, "layout(location")) {
-            ShaderAttrib a;
-
-            // Parse with sscanf
-            if (sscanf(line, "layout(location = %u) in %31s %63[^;];", &a.location, a.type,
-                       a.name) == 3) {
-                attribs[(*attribCount)++] = a;
-            }
-        }
-    }
-
-    fclose(file);
-}
-
-u32 GlslTypeToEnum(const char *type) {
-    if (strcmp(type, "float") == 0) return 1;
-    if (strcmp(type, "vec2") == 0) return 2;
-    if (strcmp(type, "vec3") == 0) return 3;
-    if (strcmp(type, "vec4") == 0) return 4;
-    if (strcmp(type, "int") == 0) return 1;
-    // extend as needed
-    return 0;
-}
-
-void ClearScreen(v4 color) {
-    glClearColor(color.r, color.g, color.b, color.a);
-    glClear(GL_COLOR_BUFFER_BIT);
-}
+#include "win32_graphics.c"
 
 // ===== ENGINE =====
-
-EngineCtx *E;
 
 InputCtx *Input() {
     return &E->Input;
@@ -766,6 +265,9 @@ GameSettings *Settings() {
 f32 Delta() {
     return E->Timing.delta;
 }
+i32 Time() {
+    return E->Timing.time;
+}
 
 global f32 squareVerts[] = {1, 1, 0, 1, 0, 1, -1, 0, 1, 1, -1, -1, 1, 0, 1, -1, 1, 0, 0, 0};
 global u32 squareIds[]   = {0, 1, 3, 1, 2, 3};
@@ -774,11 +276,11 @@ GraphicsCtx InitGraphics(const WindowCtx *ctx, const GameSettings *settings) {
     GraphicsCtx result = {0};
     InitOpenGL(ctx->window, settings);
 
-    result.shaders[SHADER_Default] = NewShader(0, 0);
-    result.shaders[SHADER_Tiled]   = NewShader("shaders\\tiled.vert", 0);
-    result.shaders[SHADER_Text]    = NewShader("shaders\\text.vert", "shaders\\text.frag");
-    result.shaders[SHADER_Rect]    = NewShader("shaders\\rect.vert", "shaders\\rect.frag");
-    result.shaders[SHADER_Line]    = NewShader("shaders\\line.vert", "shaders\\line.frag");
+    result.shaders[SHADER_Default] = ShaderFromPath(0, 0);
+    result.shaders[SHADER_Tiled]   = ShaderFromPath("shaders\\tiled.vert", 0);
+    result.shaders[SHADER_Text]    = ShaderFromPath("shaders\\text.vert", "shaders\\text.frag");
+    result.shaders[SHADER_Rect]    = ShaderFromPath("shaders\\rect.vert", "shaders\\rect.frag");
+    result.shaders[SHADER_Line]    = ShaderFromPath("shaders\\line.vert", "shaders\\line.frag");
     result.squareMesh              = NewMesh(squareVerts, 20, squareIds, 6);
     result.mouse                   = NewTexture("data\\pointer.png");
     result.postprocessing          = NewFramebuffer("shaders\\post.frag");
@@ -818,19 +320,32 @@ void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx
             GetSecondsElapsed(timing->perfCountFreq, timing->lastCounter, GetWallClock());
     }
 
+    timing->time = (i32)((GetWallClock() * 1000) / timing->perfCountFreq);
+
     // f32 msPerFrame = timing->delta * 1000.0f;
     // f32 msBehind   = (timing->delta - timing->targetSpf) * 1000.0f;
     // f64 fps        = (f64)(timing->perfCountFreq) / (f64)(GetWallClock() - timing->lastCounter);
-    // printf("[Info] [%s] FPS: %.2f MsPF: %.2f Ms behind: %.4f", __func__, fps, msPerFrame, msBehind);
+    // printf("[Info] [%s] FPS: %.2f MsPF: %.2f Ms behind: %.4f", __func__, fps, msPerFrame,
+    // msBehind);
 
-    UseFramebuffer(graphics->postprocessing);
+    Framebufferuse(graphics->postprocessing);
     {
         ClearScreen((v4){0.3f, 0.2f, 0.4f, 1.0f});
         E->Game.Draw();
         CameraEnd();
-        if (!Settings()->disableMouse) DrawTexture(graphics->mouse, Mouse(), 1 / Settings()->scale);
+        if (!Settings()->disableMouse) {
+            ShaderUse(Graphics()->shaders[SHADER_Default]);
+            SetUniform2f("res", GetResolution());
+            SetUniform2f("pos", Mouse());
+            SetUniform1f("scale", Settings()->scale);
+            SetUniform2f("size", (v2){graphics->mouse.size.x, graphics->mouse.size.y});
+            SetUniform4f("color", WHITE);
+            TextureUse(graphics->mouse);
+            VAOUse((VAO){.id = Graphics()->squareMesh.vao});
+            DrawInstances(1);
+        }
     }
-    DrawFramebuffer(graphics->postprocessing);
+    FramebufferDraw(graphics->postprocessing);
 
     SwapBuffers(window->dc);
     ReleaseDC(window->window, window->dc);
@@ -854,8 +369,8 @@ export void EngineUpdate() {
         if (k == JustPressed) LOG_INFO("Key was pressed");
     }
 
-    ReloadShader(&E->Graphics.postprocessing.shader);
-    for (i32 i = 0; i < SHADER_COUNT; i++) ReloadShader(&E->Graphics.shaders[i]);
+    ShaderReload(&E->Graphics.postprocessing.shader);
+    for (i32 i = 0; i < SHADER_COUNT; i++) ShaderReload(&E->Graphics.shaders[i]);
 
     E->Game.Update();
     TimeAndRender(&E->Timing, &E->Window, &E->Graphics);
@@ -1036,7 +551,7 @@ void InitOpenGL(HWND hWnd, const GameSettings *settings) {
     if (wglMakeCurrent(windowDC, openglrc) == 0) return;
 
     if (!gladLoadGLLoader((GLADloadproc)Win32GetProcAddress)) {
-        // LOG
+        LOG_FATAL("Glad failed to load GL");
         return;
     }
 
@@ -1227,7 +742,7 @@ void ToggleFullscreen() {
         glViewport(0, 0, cw, ch);
     }
 
-    ResizeFramebuffer(Graphics()->postprocessing);
+    FramebufferResize(Graphics()->postprocessing);
     Window()->fullscreen ^= true;
 }
 
@@ -1271,14 +786,15 @@ const i32 MonogramCoords[256] = {
     ['p'] = 80, ['q'] = 81, ['r'] = 82, ['s'] = 83, ['t'] = 84,  ['u'] = 85, ['v'] = 86, ['w'] = 87,
     ['x'] = 88, ['y'] = 89, ['z'] = 90, ['{'] = 91, ['|'] = 92,  ['}'] = 93, ['~'] = 94};
 
-void DrawText(const cstr text, v2 pos, i32 width, f32 scale) {
-    Tilemap *tilemap = &Graphics()->textBox;
+void DrawText(VAO* vao, Texture tex, v2 tSize, v2 tileSize, const cstr text, v2 pos, i32 width, f32 scale) {
     if (!width) width = INT32_MAX;
-    u64  textLen = strlen(text);
-    u32  iText = 0, iBox = 0, nextSpace = 0;
-    bool addWhitespace = false;
 
-    f32 size = tilemap->size.x * tilemap->size.y;
+    u64 textLen = strlen(text);
+    u32 iText = 0, iBox = 0, nextSpace = 0;
+
+    bool bold = false, italics = false;
+    bool addWhitespace = false;
+    f32  size          = tSize.x * tSize.y;
     while (iText < textLen && iBox < size) {
         if (!addWhitespace)
             for (u32 i = iText; i < textLen; i++) {
@@ -1288,8 +804,23 @@ void DrawText(const cstr text, v2 pos, i32 width, f32 scale) {
                 }
             }
 
-        addWhitespace          = nextSpace >= width - (iBox % width);
-        tilemap->instIdx[iBox] = !addWhitespace ? MonogramCoords[text[iText]] : 0;
+        addWhitespace = nextSpace >= width - (iBox % width);
+
+        if (text[iText] == '\b') {
+            bold ^= true;
+            iText++;
+            continue;
+        }
+        if (text[iText] == '\t') {
+            italics ^= true;
+            iText++;
+            continue;
+        }
+
+        // ((i32*)SPTR(vao->objs[1].buf))[iBox] = !addWhitespace ? MonogramCoords[text[iText]] : 0;
+        // if (bold) tilemap->fontVbo[iBox] = 1;
+        // if (italics) tilemap->fontVbo[iBox] = 2;
+        // if (bold && italics) tilemap->fontVbo[iBox] = 3;
 
         if (!addWhitespace) iText++;
         iBox++;
@@ -1299,14 +830,15 @@ void DrawText(const cstr text, v2 pos, i32 width, f32 scale) {
 
     if (textLen < size)
         for (i32 i = iBox; i < size; i++) {
-            tilemap->instIdx[i] = 0;
+            // ((i32*)SPTR(vao->objs[1].buf))[i] = 0;
         }
 
-    UseShader(Graphics()->shaders[SHADER_Text]);
-    SetUniform2f("tile_size", tilemap->tileset.tileSize);
+    ShaderUse(Graphics()->shaders[SHADER_Tiled]);
+
+    SetUniform2f("tile_size", tSize);
     v2i tilesetSize = (v2i){
-        tilemap->tileset.tex.size.x / (i32)tilemap->tileset.tileSize.x,
-        tilemap->tileset.tex.size.y / (i32)tilemap->tileset.tileSize.y,
+        tex.size.x / tileSize.x,
+        tex.size.y / tileSize.y,
     };
 
     SetUniform2i("tileset_size", tilesetSize);
@@ -1316,21 +848,14 @@ void DrawText(const cstr text, v2 pos, i32 width, f32 scale) {
     SetUniform1f("scale", scale ? scale * 2 : 2);
     SetUniform1i("tex0", 0);
 
-    UseTexture(tilemap->tileset.tex);
+    TextureUse(tex);
 
-    glBindVertexArray(tilemap->vao);
+    VAOUse(*vao);
 
-    f32 tileSize = tilemap->size.x * tilemap->size.y;
-    // on-the-fly tilemap updating
-    glBindBuffer(GL_ARRAY_BUFFER, tilemap->idVbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(i32) * tileSize, tilemap->instIdx);
+    // f32 tileSize = tilemap->size.x * tilemap->size.y;
+    BOUpdate(vao->objs[1]);
 
-    // glBindBuffer(GL_ARRAY_BUFFER, tilemap->colForeVbo);
-    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v4) * size, tilemap->instForeColor);
-    // glBindBuffer(GL_ARRAY_BUFFER, tilemap->colBackVbo);
-    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v4) * size, tilemap->instBackColor);
-
-    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, tileSize);
+    DrawInstances(iBox);
 }
 
 inline bool V2InRect(v2 pos, Rect rectangle) {
@@ -1347,23 +872,27 @@ inline bool CollisionRectRect(Rect a, Rect b) {
 }
 
 void DrawRectangle(Rect rect, v4 color, f32 radius) {
-    UseShader(E->Graphics.shaders[SHADER_Rect]);
+    ShaderUse(E->Graphics.shaders[SHADER_Rect]);
     SetUniform2f("pos", rect.pos);
     SetUniform2f("size", rect.size);
     SetUniform2f("res", GetResolution());
     SetUniform4f("color", color);
     SetUniform1f("radius", radius);
-    DrawMesh(E->Graphics.squareMesh);
+    glBindVertexArray(Graphics()->squareMesh.vao);
+    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+    glBindVertexArray(0);
 }
 
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness) {
-    UseShader(E->Graphics.shaders[SHADER_Line]);
+    ShaderUse(E->Graphics.shaders[SHADER_Line]);
     SetUniform2f("pos", from);
     SetUniform1f("thickness", thickness ? thickness : 1);
     SetUniform2f("size", v2Sub(to, from));
     SetUniform2f("res", GetResolution());
     SetUniform4f("color", color);
-    DrawMesh(E->Graphics.squareMesh);
+    glBindVertexArray(Graphics()->squareMesh.vao);
+    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+    glBindVertexArray(0);
 }
 
 void DrawPoly(Poly poly, v4 color, f32 thickness) {

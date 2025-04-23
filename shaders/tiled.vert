@@ -1,11 +1,11 @@
 #version 460 core
 
-// #+BUFFER
+// +BUFFER +INDEXED
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aTexCoord;
 
-// #+BUFFER
-layout(location = 2) in int instanceTile; // #+ DIV
+// +BUFFER +INSTANCED +DYNAMIC
+layout(location = 2) in int instanceTile;
 
 out vec2 texCoord;
 out vec4 fore_color;

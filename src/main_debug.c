@@ -35,9 +35,9 @@ GameApi LoadApi(void *memory, int32_t version) {
         return (GameApi){0};
     }
     // TODO
-    if (!CopyFile(DLL_PATH ".pdb", pdbBuf, false)) {
-        printf("[Warning] [%s] Couldn't copy file, code %i\n", __func__, GetLastError());
-    }
+    // if (!CopyFile(DLL_PATH ".pdb", pdbBuf, false)) {
+    //     printf("[Warning] [%s] Couldn't copy file, code %i\n", __func__, GetLastError());
+    // }
     HMODULE lib = LoadLibraryA(dllBuf);
     if (!lib) return (GameApi){0};
 
@@ -77,12 +77,14 @@ void ReloadApi(GameApi *api) {
     uint64_t latestWriteTime = api->GetLastWriteTime(DLL_PATH ".dll");
     if (latestWriteTime <= api->writeTime) return;
 
+    printf("The pointer was: %llu\n", (uint64_t)api->EngineGetMemory());
     Sleep(200);
     *api = LoadApi(api->EngineGetMemory(), api->version);
     if (!api->lib) {
         printf("[Fatal] [Debug] Couldn't reload dll\n");
         return;
     }
+    printf("The pointer is: %llu\n", (uint64_t)api->EngineGetMemory());
 }
 
 int32_t main() {
