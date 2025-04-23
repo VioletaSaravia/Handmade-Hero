@@ -14,7 +14,7 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "integratedTerminal",
-            "preLaunchTask": "C/C++: cl.exe build main_debug.c"
+            "preLaunchTask": "C/C++: cl.exe build main_debug.c",
         }
     ]
 }

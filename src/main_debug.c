@@ -30,9 +30,13 @@ GameApi LoadApi(void *memory, int32_t version) {
     snprintf(dllBuf, sizeof(dllBuf), DLL_PATH "%02d.dll", version);
     snprintf(pdbBuf, sizeof(pdbBuf), DLL_PATH "%02d.pdb", version++);
 
-    if (!CopyFile(DLL_PATH ".dll", dllBuf, false)) {
-        printf("[Error] [%s] Couldn't copy file, code %i\n", __func__, GetLastError());
-        return (GameApi){0};
+    while (!CopyFile(DLL_PATH ".dll", dllBuf, false)) {
+        DWORD err = GetLastError();
+        if (err != 32) {
+            printf("[Error] [%s] Couldn't copy file, code %i. Aborting...\n", __func__, err);
+            return (GameApi){0};
+        }
+        printf("[Warning] [%s] DLL is locked. Retrying...\n", __func__);
     }
     // TODO
     // if (!CopyFile(DLL_PATH ".pdb", pdbBuf, false)) {

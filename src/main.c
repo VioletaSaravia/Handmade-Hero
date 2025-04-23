@@ -1,4 +1,4 @@
-#include "game.c"
+#include "games/game.c"
 
 i32 main() {
     MemRegion memory = NewMemRegion(sizeof(EngineCtx) + sizeof(GameState));

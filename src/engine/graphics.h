@@ -20,6 +20,7 @@ typedef struct {
     u64  vertWrite, fragWrite;
 #endif
 } Shader;
+
 Shader ShaderFromPath(cstr vertFile, cstr fragFile);
 void   ShaderUse(Shader shader);
 void   ShaderReload(Shader *shader);
@@ -35,8 +36,8 @@ void   SetUniform4f(cstr name, v4 value);
 void   SetUniform1b(cstr name, bool value);
 
 typedef enum {
-    ATTRIB_FLOAT = 0x1406,
-    ATTRIB_INT   = 0x1404,
+    ATTRIB_FLOAT = GL_FLOAT,
+    ATTRIB_INT   = GL_INT,
 } AttribType;
 
 typedef struct {
@@ -45,20 +46,20 @@ typedef struct {
 } Attrib;
 
 typedef enum {
-    BUF_STATIC  = 0x88E4,
-    BUF_DYNAMIC = 0x88E8,
-} BufType;
+    BUF_STATIC  = GL_STATIC_DRAW,
+    BUF_DYNAMIC = GL_DYNAMIC_DRAW,
+} DrawType;
 
 typedef struct {
-    u32     id;
-    BufType drawType;
-    bool    ebo;
-    bool    perInstance;
-    void*    buf;
-    u32     bufSize;
-    u32     stride;
-    Attrib  attribs[4];
-    u32     attribCount;
+    u32      id;
+    DrawType drawType;
+    bool     ebo;
+    bool     perInstance;
+    void    *buf;
+    u32      bufSize;
+    u32      stride;
+    Attrib   attribs[4];
+    u32      attribCount;
 } BO;
 
 void BOInit(BO *obj, Arena *alloc);

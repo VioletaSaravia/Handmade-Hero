@@ -6,7 +6,7 @@
 
 #undef DrawText
 #undef PlaySound
-#include "engine.h"
+#include "../engine/engine.h"
 
 #include "miniaudio.h"
 #include "stb_image.h"
