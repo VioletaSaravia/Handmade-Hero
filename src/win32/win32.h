@@ -27,14 +27,29 @@ typedef struct InputCtx {
 #define GAMEPAD_MAX XUSER_MAX_COUNT
 internal v2 Win32GetMouse();
 
+typedef enum {
+    SHADER_Default,
+    SHADER_Tiled,
+    SHADER_Text,
+    SHADER_Rect,
+    SHADER_Line,
+    SHADER_COUNT,
+} BuiltinShaders;
+
+typedef enum { VAO_SQUARE, VAO_TEXT, VAO_COUNT } BuiltinVAOs;
+
+typedef enum {
+    TEX_Mouse,
+    TEX_COUNT,
+} BuiltinTextures;
+
 typedef struct GraphicsCtx {
-    Shader      shaders[SHADER_COUNT];
-    Framebuffer postprocessing;
-    u32         activeShader;
-    Mesh        squareMesh;
-    Texture     mouse;
-    Tilemap     textBox;
     Camera      cam;
+    u32         activeShader;
+    VAO         builtinVAOs[VAO_COUNT];
+    Texture     builtinTextures[TEX_COUNT];
+    Shader      builtinShaders[SHADER_COUNT];
+    Framebuffer postprocessing;
 } GraphicsCtx;
 internal void *Win32GetProcAddress(const char *name);
 internal void  InitOpenGL(HWND hWnd, const GameSettings *settings);
@@ -54,7 +69,7 @@ typedef struct SoundBuffer {
     ma_decoder   decoder;
 } SoundBuffer;
 
-#define MAX_SOUNDS 32
+#define MAX_SOUNDS 64
 typedef struct AudioCtx {
     ma_device        device;
     ma_device_config config;
@@ -75,6 +90,7 @@ internal f32 GetSecondsElapsed(i64 perfCountFreq, i64 start, i64 end);
 typedef struct WindowCtx {
     bool       running;
     bool       fullscreen;
+    v2         resolution;
     u8        *memory;
     u64        memoryLen;
     i32        w, h, bytesPerPx;
@@ -90,6 +106,7 @@ internal void  ResizeDIBSection(WindowCtx *window, v2i size);
 internal u32   GetRefreshRate(HWND hWnd);
 internal void  ResizeWindow(HWND hWnd, v2i size);
 internal void  LockCursorToWindow(HWND hWnd);
+internal v2    Win32GetResolution();
 
 typedef struct EngineCtx {
     u64          usedMemory;
@@ -99,5 +116,5 @@ typedef struct EngineCtx {
     WindowCtx    Window;
     AudioCtx     Audio;
     GraphicsCtx  Graphics;
-    GameCode    Game;
+    GameCode     Game;
 } EngineCtx;

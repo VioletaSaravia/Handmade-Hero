@@ -50,6 +50,8 @@ typedef enum {
     BUF_DYNAMIC = GL_DYNAMIC_DRAW,
 } DrawType;
 
+typedef enum { TYPE_VBO, TYPE_EBO, TYPE_FBO, TYPE_RBO } BOType;
+
 typedef struct {
     u32      id;
     DrawType drawType;
@@ -78,20 +80,6 @@ void VAOUse(VAO vao);
 void DrawInstances(u32 count);
 
 typedef struct {
-    u32 vao;
-} Mesh;
-Mesh NewMesh(f32 *verts, u64 vertCount, u32 *indices, u64 idxCount);
-
-typedef enum {
-    SHADER_Default,
-    SHADER_Tiled,
-    SHADER_Text,
-    SHADER_Rect,
-    SHADER_Line,
-    SHADER_COUNT,
-} Shaders;
-
-typedef struct {
     u32    fbo, tex, rbo, vao;
     Shader shader;
 } Framebuffer;
@@ -109,28 +97,29 @@ Texture NewTexture(const cstr path);
 Texture TextureFromMemory(void *memory, v2i size);
 void    TextureUse(Texture tex);
 
-typedef struct Tileset {
-    Texture tex;
-    v2      tileSize;
-} Tileset;
-Tileset NewTileset(const cstr path, v2 tileSize);
+// typedef struct Tileset {
+//     Texture tex;
+//     v2      tileSize;
+// } Tileset;
+// Tileset NewTileset(const cstr path, v2 tileSize);
 
-typedef struct Tilemap {
-    Tileset tileset;
-    u32     vao, ebo;
-    u32     vbo, idVbo, posVbo;
-    u32     colForeVbo, colBackVbo;
-    v2      size;
-    i32    *instIdx;
-    v4     *instForeColor;
-    v4     *instBackColor;
-    u32     width;
-} Tilemap;
-Tilemap NewTilemap(Tileset tileset, v2 size);
-void    TilemapDraw(const Tilemap *tilemap, v2 pos, f32 scale, i32 width);
-void    TilemapLoadCsv(Tilemap *tilemap, cstr csvPath);
-void    DrawText(VAO *vao, Texture tex, v2 tSize, v2 tileSize, const cstr text, v2 pos, i32 width,
-                 f32 scale);
+// typedef struct Tilemap {
+//     Tileset tileset;
+//     u32     vao, ebo;
+//     u32     vbo, idVbo, posVbo;
+//     u32     colForeVbo, colBackVbo;
+//     v2      size;
+//     i32    *instIdx;
+//     v4     *instForeColor;
+//     v4     *instBackColor;
+//     u32     width;
+// } Tilemap;
+// Tilemap NewTilemap(Tileset tileset, v2 size);
+// void    TilemapDraw(const Tilemap *tilemap, v2 pos, f32 scale, i32 width);
+// void    TilemapLoadCsv(Tilemap *tilemap, cstr csvPath);
+// void    DrawText(VAO *vao, Texture tex, v2 tSize, v2 tileSize, const cstr text, v2 pos, i32
+// width,
+//                  f32 scale);
 
 void ClearScreen(v4 color);
 

@@ -8,11 +8,8 @@ void CameraEnd() {
     Graphics()->cam = (Camera){0};
 }
 
-v2 GetResolution() {
-    RECT clientRect = {0};
-    GetClientRect(Window()->window, &clientRect);
-
-    return (v2){clientRect.right - clientRect.left, clientRect.bottom - clientRect.top};
+inline v2 GetResolution() {
+    return Window()->resolution;
 }
 
 inline v2 Mouse() {
@@ -150,7 +147,7 @@ void ShaderPrintError(u32 shader) {
     char *infoLog = malloc(logLength);
     glGetShaderInfoLog(shader, logLength, 0, infoLog);
 
-    printf("[Error] [%s] Shader compilation failed: %s\n", __func__, infoLog);
+    LOG_ERROR(infoLog);
 
     free(infoLog);
 }
@@ -162,37 +159,10 @@ void ShaderPrintProgramError(u32 program) {
     char *infoLog = malloc(logLength);
     glGetProgramInfoLog(program, logLength, 0, infoLog);
 
-    printf("[Error] [%s] Program linking failed: %s\n", __func__, infoLog);
+    LOG_ERROR(infoLog);
 
     free(infoLog);
 }
-
-Mesh NewMesh(f32 *verts, u64 vertCount, u32 *indices, u64 idxCount) {
-    Mesh result = {0};
-    u32  ebo, vbo;
-
-    glGenBuffers(1, &ebo);
-    glGenBuffers(1, &vbo);
-    glGenVertexArrays(1, &result.vao);
-
-    glBindVertexArray(result.vao);
-
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(f32) * vertCount, verts, GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(u32) * idxCount, indices, GL_STATIC_DRAW);
-
-    i32 stride = 5 * sizeof(f32);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, 0);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, (void *)(sizeof(v3)));
-    glEnableVertexAttribArray(1);
-
-    return result;
-}
-
-void DrawMesh(Mesh mesh) {}
 
 Framebuffer NewFramebuffer(cstr fragPath) {
     Framebuffer result = {0};
@@ -304,55 +274,56 @@ void TextureUse(Texture tex) {
     glBindTexture(GL_TEXTURE_2D, tex.id);
 }
 
-Tileset NewTileset(const cstr path, v2 tileSize) {
-    return (Tileset){.tex = NewTexture(path), .tileSize = tileSize};
-}
+// Tileset NewTileset(const cstr path, v2 tileSize) {
+//     return (Tileset){.tex = NewTexture(path), .tileSize = tileSize};
+// }
 
-Tilemap NewTilemap(Tileset tileset, v2 size) {
-    Tilemap result       = {.size = size};
-    result.instIdx       = ALLOC(sizeof(i32) * size.x * size.y);
-    result.instForeColor = ALLOC(sizeof(v4) * size.x * size.y);
-    result.instBackColor = ALLOC(sizeof(v4) * size.x * size.y);
+// Tilemap NewTilemap(Tileset tileset, v2 size) {
+//     Tilemap result       = {.size = size};
+//     result.instIdx       = ALLOC(sizeof(i32) * size.x * size.y);
+//     result.instForeColor = ALLOC(sizeof(v4) * size.x * size.y);
+//     result.instBackColor = ALLOC(sizeof(v4) * size.x * size.y);
 
-    persist f32 quadVertices[] = {0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1};
-    persist i32 quadIndices[]  = {0, 1, 2, 2, 3, 0};
+//     persist f32 quadVertices[] = {0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1};
+//     persist i32 quadIndices[]  = {0, 1, 2, 2, 3, 0};
 
-    result.tileset = tileset;
+//     result.tileset = tileset;
 
-    result.width = size.x * tileset.tileSize.x;
+//     result.width = size.x * tileset.tileSize.x;
 
-    glGenVertexArrays(1, &result.vao);
-    glGenBuffers(1, &result.vbo);
-    glGenBuffers(1, &result.ebo);
-    glGenBuffers(1, &result.idVbo);
-    glGenBuffers(1, &result.posVbo);
-    glGenBuffers(1, &result.colForeVbo);
-    glGenBuffers(1, &result.colBackVbo);
-    glBindVertexArray(result.vao);
+//     glGenVertexArrays(1, &result.vao);
+//     glGenBuffers(1, &result.vbo);
+//     glGenBuffers(1, &result.ebo);
+//     glGenBuffers(1, &result.idVbo);
+//     glGenBuffers(1, &result.posVbo);
+//     glGenBuffers(1, &result.colForeVbo);
+//     glGenBuffers(1, &result.colBackVbo);
+//     glBindVertexArray(result.vao);
 
-    // VERTEX VBO
-    glBindBuffer(GL_ARRAY_BUFFER, result.vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+//     // VERTEX VBO
+//     glBindBuffer(GL_ARRAY_BUFFER, result.vbo);
+//     glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), 0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), (void *)sizeof(v2));
-    glEnableVertexAttribArray(1);
+//     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), 0);
+//     glEnableVertexAttribArray(0);
+//     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), (void *)sizeof(v2));
+//     glEnableVertexAttribArray(1);
 
-    // INDEX VBO
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, result.ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(quadIndices), quadIndices, GL_STATIC_DRAW);
+//     // INDEX VBO
+//     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, result.ebo);
+//     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(quadIndices), quadIndices, GL_STATIC_DRAW);
 
-    // INSTANCE ID VBO
-    glBindBuffer(GL_ARRAY_BUFFER, result.idVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(i32) * size.x * size.y, result.instIdx, GL_DYNAMIC_DRAW);
+//     // INSTANCE ID VBO
+//     glBindBuffer(GL_ARRAY_BUFFER, result.idVbo);
+//     glBufferData(GL_ARRAY_BUFFER, sizeof(i32) * size.x * size.y, result.instIdx,
+//     GL_DYNAMIC_DRAW);
 
-    glVertexAttribIPointer(2, 1, GL_INT, 0, 0);
-    glEnableVertexAttribArray(2);
-    glVertexAttribDivisor(2, 1);
+//     glVertexAttribIPointer(2, 1, GL_INT, 0, 0);
+//     glEnableVertexAttribArray(2);
+//     glVertexAttribDivisor(2, 1);
 
-    return result;
-}
+//     return result;
+// }
 
 void VAOInit(VAO *vao, Arena *alloc) {
     glGenVertexArrays(1, &vao->id);
@@ -364,12 +335,15 @@ void VAOInit(VAO *vao, Arena *alloc) {
 }
 
 void BOInit(BO *obj, Arena *alloc) {
+    u32 err = 0;
     glGenBuffers(1, &obj->id);
     u32 target = obj->ebo ? GL_ELEMENT_ARRAY_BUFFER : GL_ARRAY_BUFFER;
     glBindBuffer(target, obj->id);
 
-    obj->buf = ArenaAlloc(alloc, 128); // TODO: How do we handle the allocation?
+    if (alloc) obj->buf = ArenaAlloc(alloc, 128); // TODO: How do we handle the allocation?
     glBufferData(target, obj->bufSize, obj->buf, (u32)obj->drawType);
+    err = glGetError();
+    if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
 
     if (obj->ebo) return;
 
@@ -379,15 +353,23 @@ void BOInit(BO *obj, Arena *alloc) {
         switch (attrib.type) {
         case ATTRIB_FLOAT:
             glVertexAttribPointer(i, attrib.count, GL_FLOAT, GL_FALSE, obj->stride, (void *)offset);
+            err = glGetError();
+            if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
             offset += attrib.count * sizeof(f32);
             glEnableVertexAttribArray(i);
+            err = glGetError();
+            if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
             if (obj->perInstance) glVertexAttribDivisor(i, 1);
 
             break;
 
         case ATTRIB_INT:
             glVertexAttribIPointer(i, attrib.count, GL_INT, obj->stride, (void *)offset);
+            err = glGetError();
+            if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
             glEnableVertexAttribArray(i);
+            err = glGetError();
+            if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
             if (obj->perInstance) glVertexAttribDivisor(i, 1);
             break;
 
@@ -455,14 +437,14 @@ VAO VAOFromShader(cstr path) {
             }
             bo  = &vao.objs[boIndex++];
             *bo = (BO){.drawType    = strstr(line, "+DYNAMIC") != 0 ? BUF_DYNAMIC : BUF_STATIC,
-                       .ebo         = strstr(line, "+INDEXED") != 0,
+                       .ebo         = false,
                        .perInstance = strstr(line, "+INSTANCED") != 0,
                        .buf         = 0,
                        .bufSize     = 0,
                        .stride      = 0,
                        .attribCount = 0};
 
-            if (bo->ebo) indexed = true;
+            if (strstr(line, "+INDEXED") != 0) indexed = true;
             continue;
         }
 
@@ -512,44 +494,44 @@ void DrawInstances(u32 count) {
     glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, count);
 }
 
-void TilemapDraw(const Tilemap *tilemap, v2 pos, f32 scale, i32 width) {
-    ShaderUse(Graphics()->shaders[SHADER_Tiled]);
-    SetUniform2f("tile_size", tilemap->tileset.tileSize);
-    v2i tilesetSize = (v2i){
-        tilemap->tileset.tex.size.x / tilemap->tileset.tileSize.x,
-        tilemap->tileset.tex.size.y / tilemap->tileset.tileSize.y,
-    };
+// void TilemapDraw(const Tilemap *tilemap, v2 pos, f32 scale, i32 width) {
+//     ShaderUse(Graphics()->shaders[SHADER_Tiled]);
+//     SetUniform2f("tile_size", tilemap->tileset.tileSize);
+//     v2i tilesetSize = (v2i){
+//         tilemap->tileset.tex.size.x / tilemap->tileset.tileSize.x,
+//         tilemap->tileset.tex.size.y / tilemap->tileset.tileSize.y,
+//     };
 
-    SetUniform2i("tileset_size", tilesetSize);
-    SetUniform1i("width", width ? width : INT32_MAX);
-    SetUniform2f("res", GetResolution());
-    SetUniform2f("pos", pos);
-    SetUniform1f("scale", scale ? scale * 2 : 2);
-    SetUniform1i("tex0", 0);
+//     SetUniform2i("tileset_size", tilesetSize);
+//     SetUniform1i("width", width ? width : INT32_MAX);
+//     SetUniform2f("res", GetResolution());
+//     SetUniform2f("pos", pos);
+//     SetUniform1f("scale", scale ? scale * 2 : 2);
+//     SetUniform1i("tex0", 0);
 
-    TextureUse(tilemap->tileset.tex);
+//     TextureUse(tilemap->tileset.tex);
 
-    VAOUse((VAO){tilemap->vao});
+//     VAOUse((VAO){tilemap->vao});
 
-    f32 size = tilemap->size.x * tilemap->size.y;
-    // BOUpdate((BO){
-    //     .ebo     = false,
-    //     .id      = tilemap->idVbo,
-    //     .buf     = tilemap->instIdx,
-    //     .bufSize = sizeof(i32) * size,
-    // });
+//     f32 size = tilemap->size.x * tilemap->size.y;
+//     // BOUpdate((BO){
+//     //     .ebo     = false,
+//     //     .id      = tilemap->idVbo,
+//     //     .buf     = tilemap->instIdx,
+//     //     .bufSize = sizeof(i32) * size,
+//     // });
 
-    DrawInstances(size);
-}
+//     DrawInstances(size);
+// }
 
-void TilemapLoadCsv(Tilemap *tilemap, cstr csvPath) {
-    u8 *data = 0;
-    // TODO Load Tiled CSVs
-    for (int i = 0; i < tilemap->size.x * tilemap->size.y; i++) {
-        i32 num             = 0;
-        tilemap->instIdx[i] = num;
-    }
-}
+// void TilemapLoadCsv(Tilemap *tilemap, cstr csvPath) {
+//     u8 *data = 0;
+//     // TODO Load Tiled CSVs
+//     for (int i = 0; i < tilemap->size.x * tilemap->size.y; i++) {
+//         i32 num             = 0;
+//         tilemap->instIdx[i] = num;
+//     }
+// }
 
 void ClearScreen(v4 color) {
     glClearColor(color.r, color.g, color.b, color.a);

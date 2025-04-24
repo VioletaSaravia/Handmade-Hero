@@ -85,14 +85,17 @@ void PlaySound(Sound sound) {
     buffer->playing     = true;
     ma_decoder_seek_to_pcm_frame(&buffer->decoder, 0);
 }
+
 void PauseSound(Sound sound) {
     Audio()->sounds[sound.id].playing = false;
 }
+
 void StopSound(Sound sound) {
     SoundBuffer *buffer = &Audio()->sounds[sound.id];
     buffer->playing     = false;
     ma_decoder_seek_to_pcm_frame(&buffer->decoder, 0);
 }
+
 void ResumeSound(Sound sound) {
     SoundBuffer *buffer = &Audio()->sounds[sound.id];
     buffer->playing     = true;

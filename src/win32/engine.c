@@ -2,8 +2,7 @@
 
 #include "audio.c"
 #include "graphics.c"
-
-// ===== MEMORY =====
+#include "input.c"
 
 EngineCtx *E;
 
@@ -65,8 +64,6 @@ void *ArenaRingAlloc(Arena *arena, u64 size) {
 void ArenaReset(Arena *arena) {
     arena->used = 0;
 }
-
-// ===== ALGORITHMS =====
 
 ComponentTable NewComponentTable(u32 buckets, u32 entSize) {
     return (ComponentTable){
@@ -149,101 +146,6 @@ Image LoadBMP32x32Image(cstr path) {
     return result;
 }
 
-// ===== INPUT =====
-
-static Keybind Keys[ACTION_COUNT][MAX_KEYBINDS] = {
-    [ACTION_UP]     = {{INPUT_Keyboard, 'W'}, {INPUT_Gamepad1, PAD_Up}},
-    [ACTION_DOWN]   = {0},
-    [ACTION_LEFT]   = {0},
-    [ACTION_RIGHT]  = {0},
-    [ACTION_ACCEPT] = {0},
-    [ACTION_CANCEL] = {0},
-};
-
-void ProcessKeyboard(ButtonState *keys, bool *running) {
-    for (i32 i = 0; i < KEY_COUNT; i++) {
-        if (keys[i] == JustReleased) keys[i] = Released;
-        if (keys[i] == JustPressed) keys[i] = Pressed;
-    }
-
-    MSG msg;
-    while (PeekMessageW(&msg, 0, 0, 0, 1)) {
-        if (msg.message == WM_QUIT) *running = 0;
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-    }
-}
-
-void ProcessGamepads(GamepadState *gamepads) {
-    for (i32 i = 0; i < GAMEPAD_MAX; i++) {
-        GamepadState new       = {0};
-        const GamepadState old = gamepads[i];
-
-        XINPUT_STATE state = {0};
-        if (XInputGetState(i, &state) != ERROR_SUCCESS) {
-            if (old.connected) new.connected = 0;
-            continue;
-        }
-
-        if (!old.connected) new.connected = 1;
-
-        XINPUT_GAMEPAD *gamepad = &state.Gamepad;
-
-        for (i32 j = 0; j < PAD_ButtonCount; j++) {
-            switch (old.buttons[j]) {
-            case Pressed:
-            case JustPressed:
-                // FIXME ???
-                new.buttons[j] =
-                    XINPUT_GAMEPAD_DPAD_UP | gamepad->wButtons ? Pressed : JustReleased;
-                break;
-
-            case Released:
-            case JustReleased:
-                new.buttons[j] =
-                    XINPUT_GAMEPAD_DPAD_UP | gamepad->wButtons ? Pressed : JustReleased;
-                break;
-            }
-        }
-
-        new.lStart = old.lEnd;
-        new.rStart = old.rEnd;
-
-        f32 stickLX = (f32)(gamepad->sThumbLX) / (gamepad->sThumbLX < 0 ? -32768.0f : 32767.0f);
-        f32 stickLY = (f32)(gamepad->sThumbLY) / (gamepad->sThumbLY < 0 ? -32768.0f : 32767.0f);
-        f32 stickRX = (f32)(gamepad->sThumbRX) / (gamepad->sThumbRX < 0 ? -32768.0f : 32767.0f);
-        f32 stickRY = (f32)(gamepad->sThumbRY) / (gamepad->sThumbRY < 0 ? -32768.0f : 32767.0f);
-
-        new.lEnd = (v2){stickLX, stickLY};
-        new.rEnd = (v2){stickRX, stickRY};
-
-        new.trigLStart = old.trigLEnd;
-        new.trigRStart = old.trigREnd;
-        new.trigLEnd   = (f32)(gamepad->bLeftTrigger) / 255.0f;
-        new.trigREnd   = (f32)(gamepad->bRightTrigger) / 255.0f;
-
-        gamepads[i] = new;
-    }
-}
-
-void ProcessMouse(MouseState *mouse) {
-    // NOTE: La rueda del mouse se maneja en MainWindowCallback
-    mouse->pos = Win32GetMouse();
-
-    if (GetAsyncKeyState(VK_LBUTTON) & 0x8000)
-        mouse->left = mouse->left >= Pressed ? Pressed : JustPressed;
-    else
-        mouse->left = mouse->left <= Released ? Released : JustReleased;
-    if (GetAsyncKeyState(VK_RBUTTON) & 0x8000)
-        mouse->right = mouse->right >= Pressed ? Pressed : JustPressed;
-    else
-        mouse->right = mouse->right <= Released ? Released : JustReleased;
-    if (GetAsyncKeyState(VK_MBUTTON) & 0x8000)
-        mouse->middle = mouse->middle >= Pressed ? Pressed : JustPressed;
-    else
-        mouse->middle = mouse->middle <= Released ? Released : JustReleased;
-}
-
 // ===== ENGINE =====
 
 InputCtx *Input() {
@@ -271,19 +173,31 @@ i32 Time() {
 global f32 squareVerts[] = {1, 1, 0, 1, 0, 1, -1, 0, 1, 1, -1, -1, 1, 0, 1, -1, 1, 0, 0, 0};
 global u32 squareIds[]   = {0, 1, 3, 1, 2, 3};
 
-GraphicsCtx InitGraphics(const WindowCtx *ctx, const GameSettings *settings) {
+GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
     GraphicsCtx result = {0};
     InitOpenGL(ctx->window, settings);
 
-    result.shaders[SHADER_Default] = ShaderFromPath(0, 0);
-    result.shaders[SHADER_Tiled]   = ShaderFromPath("shaders\\tiled.vert", 0);
-    result.shaders[SHADER_Text]    = ShaderFromPath("shaders\\text.vert", "shaders\\text.frag");
-    result.shaders[SHADER_Rect]    = ShaderFromPath("shaders\\rect.vert", "shaders\\rect.frag");
-    result.shaders[SHADER_Line]    = ShaderFromPath("shaders\\line.vert", "shaders\\line.frag");
-    result.squareMesh              = NewMesh(squareVerts, 20, squareIds, 6);
-    result.mouse                   = NewTexture("data\\pointer.png");
-    result.postprocessing          = NewFramebuffer("shaders\\post.frag");
-    result.textBox = NewTilemap(NewTileset("data\\monogram.png", (v2){6, 12}), (v2){100, 100});
+    ctx->resolution = Win32GetResolution();
+
+    result.builtinShaders[SHADER_Default] = ShaderFromPath(0, 0);
+    result.builtinShaders[SHADER_Tiled]   = ShaderFromPath("shaders\\tiled.vert", 0);
+    result.builtinShaders[SHADER_Text] = ShaderFromPath("shaders\\text.vert", "shaders\\text.frag");
+    result.builtinShaders[SHADER_Rect] = ShaderFromPath("shaders\\rect.vert", "shaders\\rect.frag");
+    result.builtinShaders[SHADER_Line] = ShaderFromPath("shaders\\line.vert", "shaders\\line.frag");
+    result.builtinTextures[TEX_Mouse]  = NewTexture("data\\pointer.png");
+
+    result.builtinVAOs[VAO_SQUARE]                 = VAOFromShader("shaders\\default.vert");
+    result.builtinVAOs[VAO_SQUARE].objs[0].buf     = squareVerts;
+    result.builtinVAOs[VAO_SQUARE].objs[0].bufSize = 20 * sizeof(f32);
+    result.builtinVAOs[VAO_SQUARE].objs[1].buf     = squareIds;
+    result.builtinVAOs[VAO_SQUARE].objs[1].bufSize = 6 * sizeof(i32);
+    VAOInit(&result.builtinVAOs[VAO_SQUARE], 0);
+
+    result.builtinVAOs[VAO_TEXT] = VAOFromShader("shaders\\text.vert");
+    // TODO Allocs
+    VAOInit(&result.builtinVAOs[VAO_TEXT], 0);
+
+    result.postprocessing = NewFramebuffer("shaders\\post.frag");
 
     return result;
 }
@@ -333,14 +247,16 @@ void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx
         E->Game.Draw();
         CameraEnd();
         if (!Settings()->disableMouse) {
-            ShaderUse(Graphics()->shaders[SHADER_Default]);
+            // DrawMouse()
+            ShaderUse(Graphics()->builtinShaders[SHADER_Default]);
             SetUniform2f("res", GetResolution());
             SetUniform2f("pos", Mouse());
             SetUniform1f("scale", Settings()->scale);
-            SetUniform2f("size", (v2){graphics->mouse.size.x, graphics->mouse.size.y});
+            Texture mouseTex = graphics->builtinTextures[TEX_Mouse];
+            SetUniform2f("size", (v2){mouseTex.size.x, mouseTex.size.y});
             SetUniform4f("color", WHITE);
-            TextureUse(graphics->mouse);
-            VAOUse((VAO){.id = Graphics()->squareMesh.vao});
+            TextureUse(mouseTex);
+            VAOUse(graphics->builtinVAOs[VAO_SQUARE]);
             DrawInstances(1);
         }
     }
@@ -353,10 +269,18 @@ void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx
     timing->lastCycleCount = endCycleCount;
 }
 
+v2 Win32GetResolution() {
+    RECT clientRect = {0};
+    GetClientRect(Window()->window, &clientRect);
+
+    return (v2){clientRect.right - clientRect.left, clientRect.bottom - clientRect.top};
+}
+
 export void EngineUpdate() {
     ProcessKeyboard(E->Input.keys, &E->Window.running);
     ProcessGamepads(E->Input.gamepads);
     ProcessMouse(&E->Input.mouse);
+    E->Window.resolution = Win32GetResolution();
 
     if (E->Input.keys[KEY_F12] == JustPressed) E->Game.Init();
     if (E->Input.keys[KEY_F11] == JustPressed) ToggleFullscreen();
@@ -369,7 +293,7 @@ export void EngineUpdate() {
     }
 
     ShaderReload(&E->Graphics.postprocessing.shader);
-    for (i32 i = 0; i < SHADER_COUNT; i++) ShaderReload(&E->Graphics.shaders[i]);
+    for (i32 i = 0; i < SHADER_COUNT; i++) ShaderReload(&E->Graphics.builtinShaders[i]);
 
     E->Game.Update();
     TimeAndRender(&E->Timing, &E->Window, &E->Graphics);
@@ -741,7 +665,7 @@ void DrawText(VAO *vao, Texture tex, v2 tSize, v2 tileSize, const cstr text, v2 
               f32 scale) {
     u32 iBox = MapStringToTextBox(text, width, tSize, vao->objs[1].buf);
 
-    ShaderUse(Graphics()->shaders[SHADER_Tiled]);
+    ShaderUse(Graphics()->builtinShaders[SHADER_Tiled]);
 
     SetUniform2f("tile_size", tSize);
     v2i tilesetSize = (v2i){
@@ -780,25 +704,30 @@ inline bool CollisionRectRect(Rect a, Rect b) {
 }
 
 void DrawRectangle(Rect rect, v4 color, f32 radius) {
-    ShaderUse(E->Graphics.shaders[SHADER_Rect]);
+    u32 err = 0;
+    ShaderUse(E->Graphics.builtinShaders[SHADER_Rect]);
     SetUniform2f("pos", rect.pos);
     SetUniform2f("size", rect.size);
     SetUniform2f("res", GetResolution());
     SetUniform4f("color", color);
     SetUniform1f("radius", radius);
-    glBindVertexArray(Graphics()->squareMesh.vao);
+    glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
+    err = glGetError();
+    if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
     glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+    err = glGetError();
+    if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
     glBindVertexArray(0);
 }
 
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness) {
-    ShaderUse(E->Graphics.shaders[SHADER_Line]);
+    ShaderUse(E->Graphics.builtinShaders[SHADER_Line]);
     SetUniform2f("pos", from);
     SetUniform1f("thickness", thickness ? thickness : 1);
     SetUniform2f("size", v2Sub(to, from));
     SetUniform2f("res", GetResolution());
     SetUniform4f("color", color);
-    glBindVertexArray(Graphics()->squareMesh.vao);
+    glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
     glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
     glBindVertexArray(0);
 }

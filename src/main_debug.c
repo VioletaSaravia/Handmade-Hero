@@ -38,10 +38,7 @@ GameApi LoadApi(void *memory, int32_t version) {
         }
         printf("[Warning] [%s] DLL is locked. Retrying...\n", __func__);
     }
-    // TODO
-    // if (!CopyFile(DLL_PATH ".pdb", pdbBuf, false)) {
-    //     printf("[Warning] [%s] Couldn't copy file, code %i\n", __func__, GetLastError());
-    // }
+
     HMODULE lib = LoadLibraryA(dllBuf);
     if (!lib) return (GameApi){0};
 
