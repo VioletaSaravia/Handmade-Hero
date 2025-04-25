@@ -497,7 +497,6 @@ extern void EngineReloadMemory(void *memory) {
     E = memory;
     S = (GameState *)((u8 *)memory + sizeof(EngineCtx));
     if (!gladLoadGLLoader((GLADloadproc)Win32GetProcAddress)) {
-        LOG_ERROR("Glad reloading failed");
         return;
     }
 }

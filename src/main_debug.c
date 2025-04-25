@@ -27,6 +27,7 @@ typedef struct GameApi {
 GameApi LoadApi(void *memory, int32_t version) {
     char dllBuf[7 + sizeof(DLL_PATH)];
     snprintf(dllBuf, sizeof(dllBuf), DLL_PATH "%02d.dll", version);
+    version++;
 
     while (!CopyFile(DLL_PATH ".dll", dllBuf, false)) {
         DWORD err = GetLastError();
@@ -34,7 +35,6 @@ GameApi LoadApi(void *memory, int32_t version) {
             printf("[Error] [%s] Couldn't copy file, code %i. Aborting\n", __func__, err);
             return (GameApi){0};
         }
-        printf("[Warning] [%s] DLL is locked. Retrying\n", __func__);
     }
 
     HMODULE lib = LoadLibraryA(dllBuf);
@@ -77,8 +77,9 @@ void ReloadApi(GameApi *api) {
 
     Sleep(200);
     GameApi newApi = LoadApi(api->EngineGetMemory(), api->version);
-    if (!api->lib) {
+    if (!newApi.lib) {
         printf("[Error] [Debug] Couldn't reload dll\n");
+        api->writeTime = latestWriteTime;
         return;
     }
     *api = newApi;
