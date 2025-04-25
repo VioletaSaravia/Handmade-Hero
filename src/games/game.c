@@ -21,7 +21,7 @@ export void Init() {}
 
 export void Update() {
     // S          = (GameState *)(((u8 *)EngineGetMemory()) + sizeof(EngineCtx));
-    S->bgColor = (v4){0.2, 0.2, 0.3, 1.0};
+    S->bgColor = (v4){0.4, 0.2, 0.3, 1.0};
 }
 
 export void Draw() {

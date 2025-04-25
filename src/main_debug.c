@@ -26,17 +26,15 @@ typedef struct GameApi {
 
 GameApi LoadApi(void *memory, int32_t version) {
     char dllBuf[7 + sizeof(DLL_PATH)];
-    char pdbBuf[7 + sizeof(DLL_PATH)];
     snprintf(dllBuf, sizeof(dllBuf), DLL_PATH "%02d.dll", version);
-    snprintf(pdbBuf, sizeof(pdbBuf), DLL_PATH "%02d.pdb", version++);
 
     while (!CopyFile(DLL_PATH ".dll", dllBuf, false)) {
         DWORD err = GetLastError();
         if (err != 32) {
-            printf("[Error] [%s] Couldn't copy file, code %i. Aborting...\n", __func__, err);
+            printf("[Error] [%s] Couldn't copy file, code %i. Aborting\n", __func__, err);
             return (GameApi){0};
         }
-        printf("[Warning] [%s] DLL is locked. Retrying...\n", __func__);
+        printf("[Warning] [%s] DLL is locked. Retrying\n", __func__);
     }
 
     HMODULE lib = LoadLibraryA(dllBuf);
@@ -77,14 +75,13 @@ void ReloadApi(GameApi *api) {
     uint64_t latestWriteTime = api->GetLastWriteTime(DLL_PATH ".dll");
     if (latestWriteTime <= api->writeTime) return;
 
-    printf("The pointer was: %llu\n", (uint64_t)api->EngineGetMemory());
     Sleep(200);
-    *api = LoadApi(api->EngineGetMemory(), api->version);
+    GameApi newApi = LoadApi(api->EngineGetMemory(), api->version);
     if (!api->lib) {
-        printf("[Fatal] [Debug] Couldn't reload dll\n");
+        printf("[Error] [Debug] Couldn't reload dll\n");
         return;
     }
-    printf("The pointer is: %llu\n", (uint64_t)api->EngineGetMemory());
+    *api = newApi;
 }
 
 int32_t main() {

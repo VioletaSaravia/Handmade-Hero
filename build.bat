@@ -4,7 +4,10 @@ setlocal
 set game=%1
 set build=%2
 
-set TIMESTAMP=%date:~-4,4%%date:~-10,2%%date:~-7,2%_%time:~0,2%%time:~3,2%%time:~6,2%
+@REM set TIMESTAMP=%date:~-4,4%%date:~-10,2%%date:~-7,2%_%time:~0,2%%time:~3,2%%time:~6,2%
+set HOUR=%time:~0,2%
+if "%HOUR:~0,1%"==" " set HOUR=0%HOUR:~1,1%
+set TIMESTAMP=%date:~-4,4%%date:~-10,2%%date:~-7,2%_%HOUR%%time:~3,2%%time:~6,2%
 
 set CL_DEBUG=cl.exe /DDEBUG /DLOG_LEVEL=0 /MP /W1 /Zi /EHsc /nologo /Fobuild\\debug\\ /Fdbuild\\debug\\ /Febuild\\debug\\game.dll /Ivendor\\ src\\games\\game.c
 set WIN_LIBS=User32.lib Gdi32.lib Winmm.lib opengl32.lib xinput.lib
