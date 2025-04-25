@@ -69,7 +69,6 @@ GameApi LoadApi(void *memory, int32_t version) {
 
     api.EngineReloadMemory(memory);
     api.EngineLoadGame(api.Setup, api.Init, api.Update, api.Draw);
-    api.Setup();
 
     return api;
 }
@@ -89,7 +88,8 @@ void ReloadApi(GameApi *api) {
 }
 
 int32_t main() {
-    GameApi api = LoadApi(malloc(64 * 200'000'0), 0);
+    GameApi api =
+        LoadApi(VirtualAlloc(0, 128 * 1'000'000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE), 0);
     if (!api.lib) {
         printf("[Fatal] [Debug] Couldn't load dll\n");
         return;

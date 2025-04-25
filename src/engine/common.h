@@ -127,8 +127,11 @@ typedef struct {
 } Poly;
 
 typedef struct {
-    u64 offset, size, used;
+    u8 *buf;
+    u64 used, size;
 } Arena;
-Arena NewArena(u64 size);
-void *ArenaAlloc(Arena *arena, u64 size);
-void  ArenaReset(Arena *arena);
+Arena NewArena(void *memory, u64 size);
+void *Alloc(Arena *arena, u64 size);
+void *RingAlloc(Arena *arena, u64 size);
+void  DeAlloc(Arena *arena, void *ptr);
+void  Empty(Arena *arena);

@@ -5,70 +5,60 @@
 #include "input.c"
 
 EngineCtx *E;
+GameState *S;
 
+#define RAW_ALLOC(size) VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+#define RAW_FREE(ptr) VirtualFree(ptr, 0, MEM_RELEASE)
 #undef ALLOC
-#define ALLOC(size) VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+#define ALLOC(size) Alloc(&E->Memory, size)
 #undef FREE
-#define FREE(ptr) VirtualFree(ptr, 0, MEM_RELEASE)
+#define FREE(ptr) DeAlloc(&E->Memory, ptr)
 
-MemRegion NewMemRegion(u32 size) {
-    return (MemRegion){
-        .count = 0,
-        .size  = size,
-        .data  = ALLOC(size),
-    };
+Arena NewArena(void *memory, u64 size) {
+    return (Arena){.buf = memory, .used = 0, .size = size};
 }
 
-u8 *BufferAlloc(MemRegion *buffer, u32 count) {
-    u8 *result = &buffer->data[buffer->count];
-    buffer->count += count;
-    return result;
-}
-
-u8 *RingAlloc(MemRegion *buf, u32 size) {
-    if (buf->count + size > buf->size) buf->count = 0;
-
-    u8 *result = &buf->data[buf->count];
-    buf->count += size;
-    return result;
-}
-
-Arena NewArena(u64 size) {
-    u64 offset = E->usedMemory;
-    E->usedMemory += size;
-    return (Arena){
-        .offset = offset,
-        .size   = size,
-        .used   = 0,
-    };
-}
-
-void *ArenaAlloc(Arena *arena, u64 size) {
-    void *result = (void *)((u8 *)E->usedMemory + arena->offset + arena->used);
-    arena->used += size;
-    if (arena->used >= arena->size) {
+void *Alloc(Arena *arena, u64 size) {
+    if (arena->used + size >= arena->size) {
         LOG_ERROR("Arena is full");
         return 0;
     }
-    return result;
-}
 
-void *ArenaRingAlloc(Arena *arena, u64 size) {
-    if (arena->used + size > arena->size) arena->used = 0;
-
-    void *result = (void *)((u8 *)E->usedMemory + arena->offset + arena->used);
+    void *result = (void *)(&arena->buf[arena->used]);
     arena->used += size;
     return result;
 }
 
-void ArenaReset(Arena *arena) {
+void *RingAlloc(Arena *arena, u64 size) {
+    if (arena->used + size >= arena->size) {
+        arena->used = 0;
+    }
+
+    void *result = (void *)(&arena->buf[arena->used]);
+    arena->used += size;
+    return result;
+}
+
+void DeAlloc(Arena *arena, void *ptr) {
+    i64 ptrDiff = (u8 *)ptr - arena->buf;
+
+    // TODO is this correct?
+    if (ptrDiff < 0 || ptrDiff >= (u64)arena->buf + arena->size) {
+        LOG_ERROR("Pointer is not in arena");
+        return;
+    }
+
+    arena->used = ptrDiff;
+}
+
+void Empty(Arena *arena) {
     arena->used = 0;
 }
 
 ComponentTable NewComponentTable(u32 buckets, u32 entSize) {
     return (ComponentTable){
         .Hash    = SimpleHash,
-        .data    = ALLOC(sizeof(Component) * 4 * buckets),
+        .data    = RAW_ALLOC(sizeof(Component) * 4 * buckets),
         .size    = buckets,
         .entLen  = 0,
         .entSize = entSize,
@@ -177,14 +167,13 @@ GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
     GraphicsCtx result = {0};
     InitOpenGL(ctx->window, settings);
 
-    ctx->resolution = Win32GetResolution();
-
     result.builtinShaders[SHADER_Default] = ShaderFromPath(0, 0);
     result.builtinShaders[SHADER_Tiled]   = ShaderFromPath("shaders\\tiled.vert", 0);
     result.builtinShaders[SHADER_Text] = ShaderFromPath("shaders\\text.vert", "shaders\\text.frag");
     result.builtinShaders[SHADER_Rect] = ShaderFromPath("shaders\\rect.vert", "shaders\\rect.frag");
     result.builtinShaders[SHADER_Line] = ShaderFromPath("shaders\\line.vert", "shaders\\line.frag");
-    result.builtinTextures[TEX_Mouse]  = NewTexture("data\\pointer.png");
+
+    result.builtinTextures[TEX_Mouse] = NewTexture("data\\pointer.png");
 
     result.builtinVAOs[VAO_SQUARE]                 = VAOFromShader("shaders\\default.vert");
     result.builtinVAOs[VAO_SQUARE].objs[0].buf     = squareVerts;
@@ -212,6 +201,9 @@ export void EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(), vo
 export void EngineInit() {
     srand((u32)time(0));
 
+    E->Memory =
+        NewArena((void *)((u8 *)E + sizeof(EngineCtx)), 128 * 1'000'000 - sizeof(EngineCtx));
+    E->Game.Setup();
     E->Window   = InitWindow();
     E->Graphics = InitGraphics(&E->Window, &E->Settings);
     InitAudio(&E->Audio);
@@ -269,9 +261,9 @@ void TimeAndRender(TimingCtx *timing, const WindowCtx *window, const GraphicsCtx
     timing->lastCycleCount = endCycleCount;
 }
 
-v2 Win32GetResolution() {
+v2 Win32GetResolution(HWND window) {
     RECT clientRect = {0};
-    GetClientRect(Window()->window, &clientRect);
+    GetClientRect(window, &clientRect);
 
     return (v2){clientRect.right - clientRect.left, clientRect.bottom - clientRect.top};
 }
@@ -280,7 +272,7 @@ export void EngineUpdate() {
     ProcessKeyboard(E->Input.keys, &E->Window.running);
     ProcessGamepads(E->Input.gamepads);
     ProcessMouse(&E->Input.mouse);
-    E->Window.resolution = Win32GetResolution();
+    E->Window.resolution = Win32GetResolution(E->Window.window);
 
     if (E->Input.keys[KEY_F12] == JustPressed) E->Game.Init();
     if (E->Input.keys[KEY_F11] == JustPressed) ToggleFullscreen();
@@ -369,7 +361,7 @@ LRESULT WINAPI MainWindowCallback(HWND window, u32 msg, WPARAM wParam, LPARAM lP
 }
 
 void ResizeDIBSection(WindowCtx *window, v2i size) {
-    if (window->memory != 0) VirtualFree(window->memory, 0, MEM_RELEASE);
+    if (window->memory != 0) RAW_FREE(window->memory);
 
     window->w          = size.w;
     window->h          = size.h;
@@ -393,7 +385,7 @@ void ResizeDIBSection(WindowCtx *window, v2i size) {
     };
 
     window->memoryLen = window->w * window->h * window->bytesPerPx;
-    window->memory    = ALLOC(window->memoryLen);
+    window->memory    = RAW_ALLOC(window->memoryLen);
 }
 
 u32 GetRefreshRate(HWND hWnd) {
@@ -442,6 +434,7 @@ WindowCtx InitWindow() {
     buffer.running      = 1;
     buffer.windowedRect = rect;
     buffer.fullscreen   = false;
+    buffer.resolution   = Win32GetResolution(buffer.window);
 
     return buffer;
 }
@@ -501,11 +494,10 @@ TimingCtx InitTiming(f32 refreshRate) {
 }
 
 extern void EngineReloadMemory(void *memory) {
-    // TODO DLL Reloading
     E = memory;
-    // FIXME Así se reinicia el dll? Hace falta?
+    S = (GameState *)((u8 *)memory + sizeof(EngineCtx));
     if (!gladLoadGLLoader((GLADloadproc)Win32GetProcAddress)) {
-        // LOG
+        LOG_ERROR("Glad reloading failed");
         return;
     }
 }
@@ -788,7 +780,7 @@ string ReadEntireFile(const char *filename) {
 
     u64 allocSize = size + 1;
 
-    result.data = ALLOC(allocSize);
+    result.data = RAW_ALLOC(allocSize);
     if (!result.data) {
         LOG_ERROR("Couldn't allocate data");
         CloseHandle(file);
@@ -800,7 +792,7 @@ string ReadEntireFile(const char *filename) {
 
     if (!success || result.len != size) {
         LOG_ERROR("Couldn't read entire file");
-        FREE(result.data);
+        RAW_FREE(result.data);
         return (string){0};
     }
     result.data[size] = '\0';

@@ -340,7 +340,7 @@ void BOInit(BO *obj, Arena *alloc) {
     u32 target = obj->ebo ? GL_ELEMENT_ARRAY_BUFFER : GL_ARRAY_BUFFER;
     glBindBuffer(target, obj->id);
 
-    if (alloc) obj->buf = ArenaAlloc(alloc, 128); // TODO: How do we handle the allocation?
+    if (alloc) obj->buf = Alloc(alloc, 128); // TODO: How do we handle the allocation?
     glBufferData(target, obj->bufSize, obj->buf, (u32)obj->drawType);
     err = glGetError();
     if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);

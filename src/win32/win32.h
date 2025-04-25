@@ -106,10 +106,10 @@ internal void  ResizeDIBSection(WindowCtx *window, v2i size);
 internal u32   GetRefreshRate(HWND hWnd);
 internal void  ResizeWindow(HWND hWnd, v2i size);
 internal void  LockCursorToWindow(HWND hWnd);
-internal v2    Win32GetResolution();
+internal v2    Win32GetResolution(HWND window);
 
-typedef struct EngineCtx {
-    u64          usedMemory;
+struct EngineCtx {
+    Arena        Memory;
     GameSettings Settings;
     InputCtx     Input;
     TimingCtx    Timing;
@@ -117,4 +117,4 @@ typedef struct EngineCtx {
     AudioCtx     Audio;
     GraphicsCtx  Graphics;
     GameCode     Game;
-} EngineCtx;
+};

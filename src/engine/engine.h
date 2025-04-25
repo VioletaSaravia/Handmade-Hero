@@ -326,6 +326,7 @@ typedef struct TimingCtx TimingCtx;
 internal TimingCtx       InitTiming(f32 refreshRate);
 
 typedef struct EngineCtx EngineCtx;
+typedef struct GameState GameState;
 
 typedef struct {
     void (*Setup)();
@@ -333,9 +334,11 @@ typedef struct {
     void (*Update)();
     void (*Draw)();
 } GameCode;
-__declspec(dllexport) void  EngineReloadMemory(void *memory);
+
+// TODO Windows specific export keyword
 __declspec(dllexport) void  EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(),
                                            void (*draw)());
+__declspec(dllexport) void  EngineReloadMemory(void *memory);
 __declspec(dllexport) void  EngineInit();
 __declspec(dllexport) void  EngineUpdate();
 __declspec(dllexport) void  EngineShutdown();
@@ -349,12 +352,6 @@ i32 Time();
 
 #define ALLOC(size) malloc(size)
 #define FREE(ptr) free(ptr)
-
-typedef struct MemRegion {
-    u32 count, size;
-    u8 *data;
-} MemRegion;
-MemRegion NewMemRegion(u32 size);
 
 #if defined(_MSC_VER)
 #include <intrin.h>

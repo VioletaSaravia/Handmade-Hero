@@ -1,10 +1,7 @@
 #include "games/game.c"
 
 i32 main() {
-    MemRegion memory = NewMemRegion(sizeof(EngineCtx) + sizeof(GameState));
-
-    E = (EngineCtx *)BufferAlloc(&memory, sizeof(EngineCtx));
-    S = (GameState *)BufferAlloc(&memory, sizeof(GameState));
+    E = (EngineCtx *)RAW_ALLOC(128 * 1'000'000);
 
     EngineLoadGame(Setup, Init, Update, Draw);
     Setup();
@@ -12,5 +9,5 @@ i32 main() {
     while (EngineIsRunning()) EngineUpdate();
     EngineShutdown();
 
-    FREE(memory.data);
+    RAW_FREE(E);
 }

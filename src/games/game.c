@@ -1,13 +1,12 @@
 #include "../win32/engine.c"
 
-typedef struct {
+struct GameState {
     Camera  cam;
     VAO     test;
     Texture font;
-    Arena   alloc;
+    Arena   scene;
     v4      bgColor;
-} GameState;
-GameState *S;
+};
 
 export void Setup() {
     E->Settings = (GameSettings){
@@ -16,15 +15,13 @@ export void Setup() {
         .resolution = (v2i){640, 360},
         .scale      = 1,
     };
-    S = (GameState *)((u8 *)EngineGetMemory() + sizeof(EngineCtx));
-    if (!E->usedMemory) E->usedMemory = sizeof(EngineCtx) + sizeof(GameState); // TODO move
 }
 
-export void Init() {
-}
+export void Init() {}
 
 export void Update() {
-    S->bgColor = (v4){0.1, 0.3, 0.8, 1.0};
+    // S          = (GameState *)(((u8 *)EngineGetMemory()) + sizeof(EngineCtx));
+    S->bgColor = (v4){0.2, 0.2, 0.3, 1.0};
 }
 
 export void Draw() {
