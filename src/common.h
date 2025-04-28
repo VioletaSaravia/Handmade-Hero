@@ -1,21 +1,15 @@
 #pragma once
 
-#include <Windows.h>
-#include <Xinput.h>
-#include <glad.h>
-
-#undef DrawText
-#undef PlaySound
-
-#include "stb_image.h"
-
-#include <SDL3/SDL.h>
-#include <SDL3_image/SDL_image.h>
 #include <float.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <time.h>
+
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
+#include <glad.h>
 
 #ifdef _WIN32
 #define export __declspec(dllexport)
@@ -58,7 +52,7 @@ typedef char *cstr;
 
 typedef struct {
     cstr data;
-    u32  len;
+    u64  len;
 } Array;
 
 typedef Array string;
@@ -391,7 +385,7 @@ Rect BoundingBoxOfSelection(const v2 *vects, const u32 count, const b64 selMap) 
 // ===== FILES =====
 
 __declspec(dllexport) u64 GetLastWriteTime(cstr file);
-string                    ReadEntireFile(const char *filename);
+string                    ReadEntireFile(const cstr filename);
 
 // ===== DEBUG =====
 

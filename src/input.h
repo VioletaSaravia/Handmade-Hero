@@ -12,9 +12,9 @@ typedef struct {
 } GamepadState;
 
 typedef struct {
-    ButtonState left, right, middle;
-    i16         wheel;
-    v2          pos;
+    i16                  wheel;
+    v2                   pos;
+    SDL_MouseButtonFlags cur, prev;
 } MouseState;
 
 typedef enum {

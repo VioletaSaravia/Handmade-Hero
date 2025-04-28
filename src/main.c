@@ -4,7 +4,6 @@ i32 main() {
     E = (EngineCtx *)malloc(128 * 1'000'000);
 
     EngineLoadGame(Setup, Init, Update, Draw);
-    Setup();
     EngineInit();
     while (EngineIsRunning()) EngineUpdate();
     EngineShutdown();

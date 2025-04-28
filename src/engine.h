@@ -16,7 +16,7 @@ InputCtx               *Input();
 
 typedef struct WindowCtx {
     SDL_Window   *window;
-    SDL_Renderer *renderer;
+    SDL_GLContext glCtx;
     bool          fullscreen, quit;
 } WindowCtx;
 WindowCtx       *Window();
@@ -49,14 +49,13 @@ typedef struct {
 } GameCode;
 
 // TODO Windows specific export keyword
-__declspec(dllexport) void  EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(),
-                                           void (*draw)());
-__declspec(dllexport) void  EngineReloadMemory(void *memory);
-__declspec(dllexport) void  EngineInit();
-__declspec(dllexport) void  EngineUpdate();
-__declspec(dllexport) void  EngineShutdown();
-__declspec(dllexport) void *EngineGetMemory();
-__declspec(dllexport) bool  EngineIsRunning();
+export void  EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(), void (*draw)());
+export void  EngineReloadMemory(void *memory);
+export void  EngineInit();
+export void  EngineUpdate();
+export void  EngineShutdown();
+export void *EngineGetMemory();
+export bool  EngineIsRunning();
 
 f32 Delta();
 u64 Time();

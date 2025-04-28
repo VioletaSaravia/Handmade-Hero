@@ -230,20 +230,14 @@ void FramebufferResize(Framebuffer shader) {
 }
 
 Texture NewTexture(cstr path) {
-    v2i size;
-    i32 nChan;
-
-    string file = ReadEntireFile(path);
-
-    u8 *img = stbi_load_from_memory(file.data, file.len, &size.x, &size.y, &nChan, 0);
-
+    SDL_Surface * img = IMG_Load(path);
     if (!img) {
-        LOG_ERROR("Couldn't load texture");
+        LOG_ERROR("Couldn't load texture: %s", SDL_GetError());
         return (Texture){0};
     }
 
-    Texture result = TextureFromMemory((void *)img, size);
-    stbi_image_free(img);
+    Texture result = TextureFromMemory((void *)img->pixels, (v2i){img->w, img->h});
+    SDL_free(img);
     return result;
 }
 

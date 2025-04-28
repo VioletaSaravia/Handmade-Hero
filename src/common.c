@@ -109,57 +109,19 @@ void *CompGet(const ComponentTable *dict, const cstr key) {
     return 0;
 }
 
-// ===== FILES =====
-
-export u64 GetLastWriteTime(cstr file) {
-    u64 result = 0;
-
-    WIN32_FILE_ATTRIBUTE_DATA fileInfo;
-
-    if (!GetFileAttributesEx(file, GetFileExInfoStandard, &fileInfo)) {
-        printf("Failed to get file attributes. Error code: %lu\n", GetLastError());
+u64 GetLastWriteTime(cstr file) {
+    u64         result = 0;
+    struct stat fileStat;
+    if (stat(file, &fileStat) != 0) {
+        perror("Failed to get file attributes");
         return 0;
     }
-
-    FILETIME writeTime = fileInfo.ftLastWriteTime;
-
-    result = ((u64)(writeTime.dwHighDateTime) << 32) | (u64)(writeTime.dwLowDateTime);
+    result = (u64)fileStat.st_mtime;
     return result;
 }
 
-string ReadEntireFile(const char *filename) {
+string ReadEntireFile(const cstr filename) {
     string result = {0};
-    HANDLE file   = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING,
-                                FILE_ATTRIBUTE_NORMAL, 0);
-    if (file == INVALID_HANDLE_VALUE) {
-        LOG_ERROR("Invalid handle");
-        return (string){0};
-    }
-
-    u32 size = GetFileSize(file, 0);
-    if (size == INVALID_FILE_SIZE && GetLastError() != NO_ERROR) {
-        CloseHandle(file);
-        LOG_ERROR("Invalid file size");
-        return (string){0};
-    }
-
-    u64 allocSize = size + 1;
-
-    result.data = SDL_malloc(allocSize);
-    if (!result.data) {
-        LOG_ERROR("Couldn't allocate data");
-        CloseHandle(file);
-        return (string){0};
-    }
-
-    bool success = ReadFile(file, result.data, size, &result.len, 0);
-    CloseHandle(file);
-
-    if (!success || result.len != size) {
-        LOG_ERROR("Couldn't read entire file");
-        SDL_free(result.data);
-        return (string){0};
-    }
-    result.data[size] = '\0';
+    result.data   = SDL_LoadFile(filename, &result.len);
     return result;
 }

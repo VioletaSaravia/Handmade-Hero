@@ -32,7 +32,8 @@ void AudioStreamCallback(void *userData, SDL_AudioStream *stream, i32 additional
         s->played += toWrite * frameSize;
     }
 
-    SDL_PutAudioStreamData(stream, temp, frameCount * frameSize);
+    if (!SDL_PutAudioStreamData(stream, temp, frameCount * frameSize))
+        LOG_ERROR("Couldn't put data in audio stream: %s", SDL_GetError());
 }
 
 void InitAudio(AudioCtx *ctx) {
@@ -42,11 +43,16 @@ void InitAudio(AudioCtx *ctx) {
         .format   = SDL_AUDIO_S32LE,
         .freq     = 48000,
     };
+
     ctx->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec,
                                             AudioStreamCallback, ctx->sounds);
+    if (!ctx->stream) LOG_ERROR("Couldn't open audio device stream: %s", SDL_GetError());
 
-    SDL_GetAudioStreamFormat(ctx->stream, &ctx->srcSpec, &ctx->dstSpec);
-    SDL_ResumeAudioStreamDevice(ctx->stream);
+    if (!SDL_GetAudioStreamFormat(ctx->stream, &ctx->srcSpec, &ctx->dstSpec))
+        LOG_ERROR("Can't resume audio stream: %s", SDL_GetError());
+
+    if (!SDL_ResumeAudioStreamDevice(ctx->stream))
+        LOG_ERROR("Can't resume audio stream: %s", SDL_GetError());
     return;
 }
 
