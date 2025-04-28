@@ -1,7 +1,7 @@
 #include "games/game.c"
 
 i32 main() {
-    E = (EngineCtx *)RAW_ALLOC(128 * 1'000'000);
+    E = (EngineCtx *)malloc(128 * 1'000'000);
 
     EngineLoadGame(Setup, Init, Update, Draw);
     Setup();
@@ -9,5 +9,5 @@ i32 main() {
     while (EngineIsRunning()) EngineUpdate();
     EngineShutdown();
 
-    RAW_FREE(E);
+    free(E);
 }

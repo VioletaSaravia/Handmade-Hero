@@ -52,7 +52,7 @@ extern void Setup() {
     E->Settings = (GameSettings){
         .name       = (cstr)L"Test Game",
         .version    = "0.2",
-        .resolution = (v2i){640, 360},
+        .defaultResolution = (v2i){640, 360},
         .scale      = 1,
     };
     S = (GameState *)((u8 *)EngineGetMemory() + sizeof(EngineCtx));
@@ -66,7 +66,7 @@ extern void Init() {
     };
     S->unitTypes.tex[0]   = NewTexture("data\\ship.png");
     S->unitTypes.speed[0] = 100;
-    S->sounds[0]          = LoadSound("data\\gun.wav", ONESHOT);
+    S->sounds[0]          = NewSound("data\\gun.wav", ONESHOT);
 
     S->selCtx.selector = NewTexture("data\\selector_square_32x32.png");
     S->cam             = (Camera){(v2){0}, 1.0f, 200};
@@ -155,7 +155,7 @@ void ProcessMovementToTarget(const SelectionCtx *ctx, Entities *units) {
     MoveList *targets = CompGet(&units->components, "targets");
 
     if ((!ctx->selecting) && Input()->mouse.right == JustPressed) {
-        PlaySound(S->sounds[0]);
+        SoundPlay(S->sounds[0]);
         Rect box       = BoundingBoxOfSelection(pos, units->components.entLen, ctx->selMap);
         v2   boxCenter = (v2){box.x + box.w / 2, box.y + box.h / 2};
         for (u64 i = 0; i < units->components.entLen; i++) {

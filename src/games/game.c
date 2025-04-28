@@ -1,29 +1,33 @@
-#include "../win32/engine.c"
+#include "../engine.c"
 
 struct GameState {
     Camera  cam;
     VAO     test;
     Sound   testSound;
     Texture font;
+    Texture ship;
     Arena   scene;
     v4      bgColor;
 };
 
 export void Setup() {
-    E->Settings = (GameSettings){
-        .name    = (cstr)L"Test Game",
-        .version = "0.2",
+    *Settings() = (GameSettings){
+        .name              = (cstr)L"Test Game",
+        .version           = "0.2",
+        .defaultResolution = (v2i){640, 360},
+        .scale             = 1,
     };
 }
 
 export void Init() {
-    S->testSound = LoadSound("data\\test.wav", ONESHOT);
+    S->testSound = NewSound("data\\test.wav", 1);
+    SoundSetPan(S->testSound, 0.9f);
+    SoundSetVol(S->testSound, 0.1f);
+    SoundPlay(S->testSound);
 }
 
 export void Update() {
-    S->bgColor = (v4){0.8, 0.2, 0.3, 1.0};
-
-    if (Input()->keys['P'] == JustPressed) PlaySound(S->testSound);
+    S->bgColor = (v4){0.4, 0.2, 0.3, 1.0};
 }
 
 export void Draw() {
@@ -33,6 +37,6 @@ export void Draw() {
         if (Time() % 1000 > i * 100)
             DrawRectangle(
                 (Rect){120 + 20 * i /*+ sin(Time() * 0.001) * 100*/, 40 + 20 * i, 200, 100},
-                (v4){v, v, v, v}, 20);
+                (v4){v, v - 0.3, v, v}, 20);
     }
 }

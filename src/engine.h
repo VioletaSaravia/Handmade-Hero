@@ -1,0 +1,62 @@
+#pragma once
+
+#include "common.h"
+
+typedef struct {
+    cstr name, version;
+    v2i  defaultResolution;
+    f32  scale;
+    bool disableMouse;
+    bool fullscreen;
+} GameSettings;
+GameSettings *Settings();
+
+typedef struct InputCtx InputCtx;
+InputCtx               *Input();
+
+typedef struct WindowCtx {
+    SDL_Window   *window;
+    SDL_Renderer *renderer;
+    bool          fullscreen, quit;
+} WindowCtx;
+WindowCtx       *Window();
+intern WindowCtx InitWindow();
+
+typedef struct GraphicsCtx GraphicsCtx;
+GraphicsCtx               *Graphics();
+GraphicsCtx                InitGraphics(WindowCtx *ctx, const GameSettings *settings);
+
+typedef struct {
+    f32 delta, targetSpf;
+    u64 time, now, last, perfFreq;
+} TimingCtx;
+intern TimingCtx InitTiming(f32 refreshRate);
+inline f32       Delta();
+inline u64       Time();
+inline v2        Mouse();
+inline f32       GetSecondsElapsed(u64 perfCountFreq, u64 start, u64 end) {
+    return (f32)(end - start) / (f32)(perfCountFreq);
+}
+
+typedef struct EngineCtx EngineCtx;
+typedef struct GameState GameState;
+
+typedef struct {
+    void (*Setup)();
+    void (*Init)();
+    void (*Update)();
+    void (*Draw)();
+} GameCode;
+
+// TODO Windows specific export keyword
+__declspec(dllexport) void  EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(),
+                                           void (*draw)());
+__declspec(dllexport) void  EngineReloadMemory(void *memory);
+__declspec(dllexport) void  EngineInit();
+__declspec(dllexport) void  EngineUpdate();
+__declspec(dllexport) void  EngineShutdown();
+__declspec(dllexport) void *EngineGetMemory();
+__declspec(dllexport) bool  EngineIsRunning();
+
+f32 Delta();
+u64 Time();
