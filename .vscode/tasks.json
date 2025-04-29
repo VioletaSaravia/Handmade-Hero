@@ -46,7 +46,10 @@
             "type": "shell",
             "label": "C/C++: cl.exe clean build game as library",
             "command": "${workspaceFolder}\\build.bat",
-            "args": ["GameName", "clean"],
+            "args": [
+                "GameName",
+                "clean"
+            ],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -59,7 +62,10 @@
             "type": "shell",
             "label": "C/C++: cl.exe release build",
             "command": "${workspaceFolder}\\build.bat",
-            "args": ["GameName", "release"],
+            "args": [
+                "GameName",
+                "release"
+            ],
             "options": {
                 "cwd": "${workspaceFolder}"
             },

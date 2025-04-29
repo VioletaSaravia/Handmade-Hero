@@ -26,14 +26,13 @@ void  SoundResume(Sound sound);
 void  SoundSetPan(Sound sound, f32 pan);
 void  SoundSetVol(Sound sound, f32 vol);
 
-#define MAX_SOUNDS 64
 typedef struct {
     SDL_AudioDeviceID deviceId;
     SDL_AudioStream  *stream;
     SDL_AudioSpec     srcSpec, dstSpec;
-    SoundBuffer       sounds[MAX_SOUNDS];
-    u32               count;
+    SoundBuffer      *sounds;
+    u32               soundsMax, soundsCount;
 } AudioCtx;
-void      InitAudio(AudioCtx *ctx);
+AudioCtx  InitAudio();
 void      ShutdownAudio(AudioCtx *audio);
 AudioCtx *Audio();

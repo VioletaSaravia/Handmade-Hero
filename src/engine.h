@@ -4,8 +4,7 @@
 
 typedef struct {
     cstr name, version;
-    v2i  defaultResolution;
-    f32  scale;
+    v2i  resolution;
     bool disableMouse;
     bool fullscreen;
 } GameSettings;
@@ -21,19 +20,19 @@ typedef struct WindowCtx {
 } WindowCtx;
 WindowCtx       *Window();
 intern WindowCtx InitWindow();
+void             UpdateWindow(WindowCtx *ctx);
 
 typedef struct GraphicsCtx GraphicsCtx;
 GraphicsCtx               *Graphics();
-GraphicsCtx                InitGraphics(WindowCtx *ctx, const GameSettings *settings);
 
 typedef struct {
     f32 delta, targetSpf;
     u64 time, now, last, perfFreq;
 } TimingCtx;
 intern TimingCtx InitTiming(f32 refreshRate);
+void             UpdateTiming(TimingCtx *ctx);
 inline f32       Delta();
 inline u64       Time();
-inline v2        Mouse();
 inline f32       GetSecondsElapsed(u64 perfCountFreq, u64 start, u64 end) {
     return (f32)(end - start) / (f32)(perfCountFreq);
 }

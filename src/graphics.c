@@ -8,7 +8,7 @@ void CameraEnd() {
     Graphics()->cam = (Camera){0};
 }
 
-inline v2 GetResolution() {
+v2 GetResolution() {
     v2i result = {0};
     SDL_GetWindowSize(Window()->window, &result.x, &result.y);
     return (v2){(f32)result.x, (f32)result.y};
@@ -230,7 +230,7 @@ void FramebufferResize(Framebuffer shader) {
 }
 
 Texture NewTexture(cstr path) {
-    SDL_Surface * img = IMG_Load(path);
+    SDL_Surface *img = IMG_Load(path);
     if (!img) {
         LOG_ERROR("Couldn't load texture: %s", SDL_GetError());
         return (Texture){0};
@@ -444,7 +444,7 @@ void DrawMouse() {
     ShaderUse(Graphics()->builtinShaders[SHADER_Default]);
     SetUniform2f("res", GetResolution());
     SetUniform2f("pos", Mouse());
-    SetUniform1f("scale", Settings()->scale);
+    SetUniform1f("scale", 1);
     Texture mouseTex = Graphics()->builtinTextures[TEX_Mouse];
     SetUniform2f("size", (v2){mouseTex.size.x, mouseTex.size.y});
     SetUniform4f("color", WHITE);
@@ -562,7 +562,7 @@ void DrawText(VAO *vao, Texture tex, v2 tSize, v2 tileSize, const cstr text, v2 
     DrawInstances(iBox);
 }
 
-inline bool V2InRect(v2 pos, Rect rectangle) {
+bool V2InRect(v2 pos, Rect rectangle) {
     f32 left   = fminf(rectangle.x, rectangle.x + rectangle.w);
     f32 right  = fmaxf(rectangle.x, rectangle.x + rectangle.w);
     f32 top    = fminf(rectangle.y, rectangle.y + rectangle.h);
@@ -571,7 +571,7 @@ inline bool V2InRect(v2 pos, Rect rectangle) {
     return (pos.x >= left && pos.x <= right && pos.y >= top && pos.y <= bottom);
 }
 
-inline bool CollisionRectRect(Rect a, Rect b) {
+bool CollisionRectRect(Rect a, Rect b) {
     return a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
 }
 
@@ -641,4 +641,17 @@ GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
     result.postprocessing = NewFramebuffer("shaders\\post.frag");
 
     return result;
+}
+
+void UpdateGraphics(GraphicsCtx *ctx, void (*draw)()) {
+    ShaderReload(&ctx->postprocessing.shader);
+    for (i32 i = 0; i < SHADER_COUNT; i++) ShaderReload(&ctx->builtinShaders[i]);
+    Framebufferuse(ctx->postprocessing);
+    {
+        ClearScreen((v4){0.3f, 0.4f, 0.4f, 1.0f});
+        draw();
+        CameraEnd();
+        if (!Settings()->disableMouse) DrawMouse();
+    }
+    FramebufferDraw(ctx->postprocessing);
 }

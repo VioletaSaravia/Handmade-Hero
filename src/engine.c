@@ -1,9 +1,9 @@
 #include "engine.h"
 
-#include "audio.c"
-#include "common.c"
-#include "graphics.c"
-#include "input.c"
+#include "audio.h"
+#include "common.h"
+#include "graphics.h"
+#include "input.h"
 
 struct EngineCtx {
     Arena        Memory;
@@ -19,33 +19,33 @@ struct EngineCtx {
 EngineCtx *E;
 GameState *S;
 
-inline InputCtx *Input() {
+InputCtx *Input() {
     return &E->Input;
 }
-inline WindowCtx *Window() {
+WindowCtx *Window() {
     return &E->Window;
 }
-inline GraphicsCtx *Graphics() {
+GraphicsCtx *Graphics() {
     return &E->Graphics;
 }
-inline AudioCtx *Audio() {
+AudioCtx *Audio() {
     return &E->Audio;
 }
-inline TimingCtx *Timing() {
+TimingCtx *Timing() {
     return &E->Timing;
 }
-inline GameSettings *Settings() {
+GameSettings *Settings() {
     return &E->Settings;
 }
 
-inline f32 Delta() {
+f32 Delta() {
     return Timing()->delta;
 }
-inline u64 Time() {
+u64 Time() {
     return Timing()->time;
 }
-inline v2 Mouse() {
-    return Input()->mouse.pos;
+v2 Mouse() {
+    return Input()->mousePos;
 }
 
 export void EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(), void (*draw)()) {
@@ -56,65 +56,27 @@ export void EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(), vo
 }
 
 export void EngineInit() {
-    srand((u32)time(0));
+    SDL_srand(0);
 
     E->Game.Setup();
     E->Memory   = NewArena((void *)((u8 *)E + sizeof(EngineCtx)), 128 * 1'000'000);
-    E->Window   = InitWindow();
+    E->Window   = InitWindow(Settings());
     E->Graphics = InitGraphics(&E->Window, &E->Settings);
-    InitAudio(&E->Audio);
-    E->Timing = InitTiming(SDL_GetCurrentDisplayMode(SDL_GetDisplays(0)[0])->refresh_rate);
+    E->Audio    = InitAudio();
+    E->Timing   = InitTiming(SDL_GetCurrentDisplayMode(SDL_GetDisplays(0)[0])->refresh_rate);
+    E->Input    = InitInput();
 
     E->Game.Init();
 }
 
 export void EngineUpdate() {
-    SDL_Event event = {0};
-    while (SDL_PollEvent(&event)) {
-        switch (event.type) {
-        case SDL_EVENT_QUIT: Window()->quit = true; break;
-        default: break;
-        }
-    }
-
-    InputCtx *input   = Input();
-    input->mouse.prev = input->mouse.cur;
-    input->mouse.cur  = SDL_GetMouseState(&input->mouse.pos.x, &input->mouse.pos.y);
-
-    TimingCtx *timing = &E->Timing;
-    E->Timing.time    = SDL_GetTicks();
-    timing->delta = GetSecondsElapsed(timing->perfFreq, timing->last, SDL_GetPerformanceCounter());
-
-    while (timing->delta < timing->targetSpf) {
-        SDL_Delay((u32)(1000.0 * (timing->targetSpf - timing->delta)));
-        timing->delta = GetSecondsElapsed(SDL_GetPerformanceFrequency(), timing->last,
-                                          SDL_GetPerformanceCounter());
-    }
-
-    f32 msPerFrame = timing->delta * 1000.0f;
-    f32 msBehind   = (timing->delta - timing->targetSpf) * 1000.0f;
-    f64 fps        = (f64)(timing->perfFreq) / (f64)(SDL_GetPerformanceCounter() - timing->last);
-    LOG_INFO("FPS: %.2f MsPF: %.2f Ms behind: %.4f", fps, msPerFrame, msBehind);
-
-    timing->last = timing->now;
-    timing->now  = SDL_GetPerformanceCounter();
+    UpdateInput(Input());
+    UpdateTiming(Timing());
 
     E->Game.Update();
 
-    GraphicsCtx *graphics = &E->Graphics;
-    ShaderReload(&graphics->postprocessing.shader);
-    for (i32 i = 0; i < SHADER_COUNT; i++) ShaderReload(&graphics->builtinShaders[i]);
-    Framebufferuse(graphics->postprocessing);
-    {
-        ClearScreen((v4){0.3f, 0.4f, 0.4f, 1.0f});
-        E->Game.Draw();
-        CameraEnd();
-        if (!Settings()->disableMouse) DrawMouse();
-    }
-    FramebufferDraw(graphics->postprocessing);
-
-    WindowCtx *window = &E->Window;
-    SDL_GL_SwapWindow(window->window);
+    UpdateGraphics(Graphics(), E->Game.Draw);
+    UpdateWindow(Window());
 }
 
 extern void EngineReloadMemory(void *memory) {
@@ -143,18 +105,19 @@ export bool EngineIsRunning() {
     return !Window()->quit;
 }
 
-WindowCtx InitWindow() {
+WindowCtx InitWindow(const GameSettings *settings) {
     WindowCtx buffer = {0};
 
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
-    SDL_SetAppMetadata("Handmade", "0.1", "com.violeta.handmade");
+    SDL_SetAppMetadata(settings->name, settings->version, "com.violeta.handmade");
     SDL_SetAppMetadataProperty("SDL_PROP_APP_METADATA_CREATOR_STRING", "Violeta Saravia");
-    // SDL_CreateWindowAndRenderer("Handmade v0.1", 640, 360, SDL_WINDOW_OPENGL, &buffer.window,
-    //                             &buffer.renderer);
-    buffer.window = SDL_CreateWindow("Handmade v0.1", 640, 360, SDL_WINDOW_OPENGL);
+
+    buffer.window = SDL_CreateWindow(settings->name, settings->resolution.w, settings->resolution.h,
+                                     SDL_WINDOW_OPENGL);
     SDL_SetWindowPosition(buffer.window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     if (E->Settings.fullscreen) SDL_SetWindowFullscreen(buffer.window, true);
     SDL_SetWindowIcon(buffer.window, IMG_Load("data\\icon.ico"));
+
     SDL_HideCursor();
 
     buffer.glCtx = SDL_GL_CreateContext(buffer.window);
@@ -166,14 +129,24 @@ WindowCtx InitWindow() {
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glViewport(0, 0, 640, 360);
+    glViewport(0, 0, settings->resolution.w, settings->resolution.h);
+
     if (!SDL_ShowWindow(buffer.window)) LOG_FATAL("Failed to show window: %s", SDL_GetError())
 
     return buffer;
 }
 
+void UpdateWindow(WindowCtx *ctx) {
+    SDL_GL_SwapWindow(ctx->window);
+    if (GetKey(KEY_F11) == JustPressed) {
+        if (SDL_SetWindowFullscreen(ctx->window, !ctx->fullscreen))
+            ctx->fullscreen ^= true;
+        else
+            LOG_ERROR("Couldn't fullscreen window: %s", SDL_GetError());
+    }
+}
+
 TimingCtx InitTiming(f32 refreshRate) {
-    // timeBeginPeriod(1);
     TimingCtx result = {
         .delta     = 1.0f / refreshRate,
         .targetSpf = result.delta,
@@ -182,4 +155,23 @@ TimingCtx InitTiming(f32 refreshRate) {
         .perfFreq  = SDL_GetPerformanceFrequency(),
     };
     return result;
+}
+
+void UpdateTiming(TimingCtx *ctx) {
+    ctx->time  = SDL_GetTicks();
+    ctx->delta = GetSecondsElapsed(ctx->perfFreq, ctx->last, SDL_GetPerformanceCounter());
+
+    while (ctx->delta < ctx->targetSpf) {
+        SDL_Delay((u32)(1000.0 * (ctx->targetSpf - ctx->delta)));
+        ctx->delta = GetSecondsElapsed(SDL_GetPerformanceFrequency(), ctx->last,
+                                       SDL_GetPerformanceCounter());
+    }
+
+    f32 msPerFrame = ctx->delta * 1000.0f;
+    f32 msBehind   = (ctx->delta - ctx->targetSpf) * 1000.0f;
+    f64 fps        = (f64)(ctx->perfFreq) / (f64)(SDL_GetPerformanceCounter() - ctx->last);
+    // LOG_INFO("FPS: %.2f MsPF: %.2f Ms behind: %.4f", fps, msPerFrame, msBehind);
+
+    ctx->last = ctx->now;
+    ctx->now  = SDL_GetPerformanceCounter();
 }

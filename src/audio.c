@@ -9,7 +9,7 @@ void AudioStreamCallback(void *userData, SDL_AudioStream *stream, i32 additional
     i32 frameCount = SDL_min(additionalAmount / frameSize, 2048);
     f32 temp[4096] = {0};
 
-    for (u32 i = 0; i < MAX_SOUNDS; i++) {
+    for (u32 i = 0; i < 64; i++) {
         SoundBuffer *s = &sounds[i];
         if (s->played >= s->len - frameSize && s->type == LOOPING) s->played = 0;
         if (s->played >= s->len - frameSize && s->type != LOOPING) s->playing = false;
@@ -25,7 +25,7 @@ void AudioStreamCallback(void *userData, SDL_AudioStream *stream, i32 additional
         rightGain      = fmaxf(0.0f, rightGain);
         for (i32 j = 0; j < toWrite * channels; j++) {
             i32 id = j * channels;
-            temp[id + 0] += src[id + 0] * 0.2;
+            temp[id + 0] += src[id + 0] * leftGain;
             temp[id + 1] += src[id + 1] * rightGain;
         }
 
@@ -36,28 +36,34 @@ void AudioStreamCallback(void *userData, SDL_AudioStream *stream, i32 additional
         LOG_ERROR("Couldn't put data in audio stream: %s", SDL_GetError());
 }
 
-void InitAudio(AudioCtx *ctx) {
-    ctx->deviceId      = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, 0);
+AudioCtx InitAudio() {
+    AudioCtx result  = {0};
+    result.soundsMax = 64;
+    result.deviceId  = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, 0);
+    result.sounds    = SDL_calloc(result.soundsMax, sizeof(SoundBuffer));
+
     SDL_AudioSpec spec = {
         .channels = 2,
         .format   = SDL_AUDIO_S32LE,
         .freq     = 48000,
     };
 
-    ctx->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec,
-                                            AudioStreamCallback, ctx->sounds);
-    if (!ctx->stream) LOG_ERROR("Couldn't open audio device stream: %s", SDL_GetError());
+    result.stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec,
+                                              AudioStreamCallback, result.sounds);
+    if (!result.stream) LOG_ERROR("Couldn't open audio device stream: %s", SDL_GetError());
 
-    if (!SDL_GetAudioStreamFormat(ctx->stream, &ctx->srcSpec, &ctx->dstSpec))
+    if (!SDL_GetAudioStreamFormat(result.stream, &result.srcSpec, &result.dstSpec))
         LOG_ERROR("Can't resume audio stream: %s", SDL_GetError());
 
-    if (!SDL_ResumeAudioStreamDevice(ctx->stream))
+    if (!SDL_ResumeAudioStreamDevice(result.stream))
         LOG_ERROR("Can't resume audio stream: %s", SDL_GetError());
-    return;
+
+    return result;
 }
 
 void ShutdownAudio(AudioCtx *audio) {
     SDL_DestroyAudioStream(Audio()->stream);
+    SDL_free(Audio()->sounds);
 }
 
 Sound NewSound(cstr path, PlaybackType type) {
@@ -76,9 +82,9 @@ Sound NewSound(cstr path, PlaybackType type) {
     if (!SDL_BindAudioStream(Audio()->deviceId, result.audioStream))
         LOG_ERROR("Failed to bind audio stream: %s", SDL_GetError());
 
-    Audio()->sounds[Audio()->count] = result;
+    Audio()->sounds[Audio()->soundsCount] = result;
 
-    return (Sound){.id = Audio()->count++};
+    return (Sound){.id = Audio()->soundsCount++};
 }
 
 void SoundPlay(Sound sound) {

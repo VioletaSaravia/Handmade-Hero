@@ -112,6 +112,9 @@ struct GraphicsCtx {
     Shader      builtinShaders[SHADER_COUNT];
     Framebuffer postprocessing;
 };
+GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings);
+void        UpdateGraphics(GraphicsCtx *ctx, void (*draw)());
+
 v2   GetResolution();
 v2   Mouse();
 v2   MouseInWorld(Camera cam);

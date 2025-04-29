@@ -56,12 +56,7 @@ typedef struct {
 } Array;
 
 typedef Array string;
-string        String(cstr data) {
-    string result;
-    result.data = data;
-    result.len  = (u32)strlen(data);
-    return result;
-}
+string        String(cstr data);
 
 typedef union {
     struct {
@@ -71,6 +66,10 @@ typedef union {
         f32 w, h;
     };
 } v2;
+
+typedef struct {
+    bool x, y;
+} v2b;
 
 inline v2 v2Add(v2 a, v2 b) {
     return (v2){a.x + b.x, a.y + b.y};
@@ -143,10 +142,6 @@ void  Empty(Arena *arena);
 
 // ===== MATH =====
 
-f32 Rand() {
-    return (f32)rand() / INT16_MAX;
-}
-
 #define MAX(a, b) (a >= b ? a : b)
 #define MIN(a, b) (a <= b ? a : b)
 
@@ -184,30 +179,7 @@ inline f32 Length(v2 vec) {
     return sqrtf(vec.x * vec.x + vec.y * vec.y);
 }
 
-v2 CollisionNormal(Rect rectA, Rect rectB) {
-    float dx = (rectA.x + rectA.w / 2) - (rectB.x + rectB.w / 2);
-    float dy = (rectA.y + rectA.h / 2) - (rectB.y + rectB.h / 2);
-    float px = (rectA.w + rectB.w) / 2 - fabsf(dx);
-    float py = (rectA.h + rectB.h) / 2 - fabsf(dy);
-
-    v2 normal = {0, 0};
-
-    if (px < py) {
-        // Collision is horizontal
-        if (dx > 0)
-            normal.x = 1; // From left
-        else
-            normal.x = -1; // From right
-    } else {
-        // Collision is vertical
-        if (dy > 0)
-            normal.y = 1; // From top
-        else
-            normal.y = -1; // From bottom
-    }
-
-    return normal;
-}
+v2 CollisionNormal(Rect rectA, Rect rectB);
 
 inline v2 MoveBy(v2 a, v2 b, f32 amount) {
     v2  to   = (v2){b.x - a.x, b.y - a.y};
@@ -245,21 +217,6 @@ typedef struct {
     v2 p0, p1, p2, p3;
 } Bezier;
 
-v2 bezierPoint(Bezier b, float t) {
-    float u   = 1.0f - t;
-    float tt  = t * t;
-    float uu  = u * u;
-    float uuu = uu * u;
-    float ttt = tt * t;
-
-    v2 p = {0};
-    p.x  = uuu * b.p0.x + 3 * uu * t * b.p1.x + 3 * u * tt * b.p2.x + ttt * b.p3.x;
-
-    p.y = uuu * b.p0.y + 3 * uu * t * b.p1.y + 3 * u * tt * b.p2.y + ttt * b.p3.y;
-
-    return p;
-}
-
 // ===== ALGORITHMS =====
 
 typedef enum ComponentType ComponentType;
@@ -284,28 +241,18 @@ void          *CompInsert(ComponentTable *dict, const cstr key, void *data);
 void          *CompUpdate(ComponentTable *dict, const cstr key, void *data);
 void          *CompGet(const ComponentTable *dict, const cstr key);
 
-u32 SimpleHash(cstr str) {
-    u32 hash = 216;
-    // for (u32 i = 0; i < 4 && *str; i++) {
-    while (*str) {
-        hash ^= (char)(*str++);
-        hash *= 167;
-    }
-    return hash;
-}
-
 typedef struct {
     f32 _k1, _k2, _k3;
     f32 freq, damp, resp;
 } Damper;
 
-void DamperSetK(Damper *val) {
+inline void DamperSetK(Damper *val) {
     val->_k1 = val->damp / (PI * val->freq);
     val->_k2 = 1 / ((TAU * val->freq) * (TAU * val->freq));
     val->_k3 = val->resp * val->damp / (TAU * val->freq);
 }
 
-void DamperSet(Damper *val, f32 f, f32 z, f32 r) {
+inline void DamperSet(Damper *val, f32 f, f32 z, f32 r) {
     val->freq = f;
     val->damp = z;
     val->resp = r;
@@ -313,7 +260,7 @@ void DamperSet(Damper *val, f32 f, f32 z, f32 r) {
     DamperSetK(val);
 }
 
-Damper NewDamper(f32 f, f32 z, f32 r) {
+inline Damper NewDamper(f32 f, f32 z, f32 r) {
     Damper result = (Damper){
         .freq = f,
         .damp = z,
@@ -328,7 +275,7 @@ typedef struct {
     bool started, enabled;
 } f32d;
 
-f32d Newf32d(f32 x0) {
+inline f32d Newf32d(f32 x0) {
     return (f32d){
         .y       = x0,
         ._xp     = x0,
@@ -337,7 +284,7 @@ f32d Newf32d(f32 x0) {
     };
 }
 
-void f32dUpdate(f32d *val, const Damper *damper, f32 delta, f32 x) {
+inline void f32dUpdate(f32d *val, const Damper *damper, f32 delta, f32 x) {
     // if (!val->started) {}
 
     if (!val->enabled) {
@@ -354,19 +301,7 @@ void f32dUpdate(f32d *val, const Damper *damper, f32 delta, f32 x) {
         val->_yd + delta * (x + damper->_k3 * xd - val->y - damper->_k1 * val->_yd) / k2Stable;
 }
 
-Rect BoundingBoxOfSelection(const v2 *vects, const u32 count, const b64 selMap) {
-    f32 minX = FLT_MAX, maxX = -FLT_MAX, minY = FLT_MAX, maxY = -FLT_MAX;
-    for (u64 i = 0; i < count; i++) {
-        if (!(selMap & (1ull << i))) continue;
-
-        v2 vec = vects[i];
-        if (vec.x < minX) minX = vec.x;
-        if (vec.y < minY) minY = vec.y;
-        if (vec.x > maxX) maxX = vec.x;
-        if (vec.y > maxY) maxY = vec.y;
-    }
-    return (Rect){minX, minY, maxX - minX, maxY - minY};
-}
+Rect BoundingBoxOfSelection(const v2 *vects, const u32 count, const b64 selMap);
 
 // ===== MEMORY =====
 

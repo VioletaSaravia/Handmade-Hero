@@ -40,7 +40,7 @@ typedef struct {
 
 typedef struct {
     Camera cam;
-    Sound  sounds[MAX_SOUNDS];
+    Sound  sounds[64];
 
     SelectionCtx selCtx;
     Entities     units;
@@ -52,7 +52,7 @@ extern void Setup() {
     E->Settings = (GameSettings){
         .name       = (cstr)L"Test Game",
         .version    = "0.2",
-        .defaultResolution = (v2i){640, 360},
+        .resolution = (v2i){640, 360},
         .scale      = 1,
     };
     S = (GameState *)((u8 *)EngineGetMemory() + sizeof(EngineCtx));
