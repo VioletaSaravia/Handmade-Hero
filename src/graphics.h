@@ -94,6 +94,7 @@ typedef enum {
     SHADER_Text,
     SHADER_Rect,
     SHADER_Line,
+    SHADER_Ngon,
     SHADER_COUNT,
 } BuiltinShaders;
 
@@ -124,5 +125,7 @@ void DrawRectangle(Rect rect, v4 color, f32 radius);
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness);
 void DrawCircle(v2 pos, v4 color, f32 radius);
 void DrawPoly(Poly poly, v4 color, f32 thickness);
+void DrawNgon(Rect rect, v4 color, f32 radius, i32 sides, f32 smooth);
 
 #define WHITE (v4){1, 1, 1, 1}
+#define BLACK (v4){0, 0, 0, 1}

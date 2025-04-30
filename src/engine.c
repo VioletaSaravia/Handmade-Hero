@@ -3,6 +3,7 @@
 #include "audio.h"
 #include "common.h"
 #include "graphics.h"
+#include "gui.h"
 #include "input.h"
 
 struct EngineCtx {
@@ -59,7 +60,7 @@ export void EngineInit() {
     SDL_srand(0);
 
     E->Game.Setup();
-    E->Memory   = NewArena((void *)((u8 *)E + sizeof(EngineCtx)), 128 * 1'000'000);
+    E->Memory   = NewArena((void *)((u8 *)E + sizeof(EngineCtx)), 128 * 1000000);
     E->Window   = InitWindow(Settings());
     E->Graphics = InitGraphics(&E->Window, &E->Settings);
     E->Audio    = InitAudio();

@@ -118,7 +118,7 @@ typedef union {
         f32 x, y, w, h;
     };
 } Rect;
-inline bool V2InRect(v2 pos, Rect rectangle);
+bool V2InRect(v2 pos, Rect rectangle);
 
 typedef struct {
     v2  pos;

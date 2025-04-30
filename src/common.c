@@ -151,6 +151,15 @@ void *CompGet(const ComponentTable *dict, const cstr key) {
     return 0;
 }
 
+bool V2InRect(v2 pos, Rect rectangle) {
+    f32 left   = fminf(rectangle.x, rectangle.x + rectangle.w);
+    f32 right  = fmaxf(rectangle.x, rectangle.x + rectangle.w);
+    f32 top    = fminf(rectangle.y, rectangle.y + rectangle.h);
+    f32 bottom = fmaxf(rectangle.y, rectangle.y + rectangle.h);
+
+    return (pos.x >= left && pos.x <= right && pos.y >= top && pos.y <= bottom);
+}
+
 Rect BoundingBoxOfSelection(const v2 *vects, const u32 count, const b64 selMap) {
     f32 minX = FLT_MAX, maxX = -FLT_MAX, minY = FLT_MAX, maxY = -FLT_MAX;
     for (u64 i = 0; i < count; i++) {

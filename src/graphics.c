@@ -562,15 +562,6 @@ void DrawText(VAO *vao, Texture tex, v2 tSize, v2 tileSize, const cstr text, v2 
     DrawInstances(iBox);
 }
 
-bool V2InRect(v2 pos, Rect rectangle) {
-    f32 left   = fminf(rectangle.x, rectangle.x + rectangle.w);
-    f32 right  = fmaxf(rectangle.x, rectangle.x + rectangle.w);
-    f32 top    = fminf(rectangle.y, rectangle.y + rectangle.h);
-    f32 bottom = fmaxf(rectangle.y, rectangle.y + rectangle.h);
-
-    return (pos.x >= left && pos.x <= right && pos.y >= top && pos.y <= bottom);
-}
-
 bool CollisionRectRect(Rect a, Rect b) {
     return a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
 }
@@ -583,6 +574,25 @@ void DrawRectangle(Rect rect, v4 color, f32 radius) {
     SetUniform2f("res", GetResolution());
     SetUniform4f("color", color);
     SetUniform1f("radius", radius);
+    glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
+    err = glGetError();
+    if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
+    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+    err = glGetError();
+    if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
+    glBindVertexArray(0);
+}
+
+void DrawNgon(Rect rect, v4 color, f32 radius, i32 sides, f32 rotation) {
+    u32 err = 0;
+    ShaderUse(Graphics()->builtinShaders[SHADER_Ngon]);
+    SetUniform2f("pos", rect.pos);
+    SetUniform2f("size", rect.size);
+    SetUniform2f("res", GetResolution());
+    SetUniform4f("color", color);
+    SetUniform1f("radius", radius);
+    SetUniform1f("rotation", rotation);
+    SetUniform1i("sides", sides);
     glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
     err = glGetError();
     if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
@@ -624,6 +634,7 @@ GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
     result.builtinShaders[SHADER_Text] = ShaderFromPath("shaders\\text.vert", "shaders\\text.frag");
     result.builtinShaders[SHADER_Rect] = ShaderFromPath("shaders\\rect.vert", "shaders\\rect.frag");
     result.builtinShaders[SHADER_Line] = ShaderFromPath("shaders\\line.vert", "shaders\\line.frag");
+    result.builtinShaders[SHADER_Ngon] = ShaderFromPath("shaders\\rect.vert", "shaders\\ngon.frag");
 
     result.builtinTextures[TEX_Mouse] = NewTexture("data\\pointer.png");
 
