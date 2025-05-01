@@ -10,30 +10,31 @@ uniform float radius;   // Radius in pixels (from center to edge)
 uniform float rotation; // Rotation angle in radians
 
 void main() {
-    // Convert UV to pixel coordinates centered at (0, 0)
+    // Center UV and convert to pixel space
     vec2 p = (vUV - 0.5) * size;
+
+    // Apply aspect ratio correction to make radius circular
+    float aspect = size.x / size.y;
+    p.x /= aspect;
 
     // Apply rotation
     float c = cos(rotation);
     float s = sin(rotation);
     p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
 
-    // Get polar coordinates
+    // Convert to polar coordinates
     float angle = atan(p.y, p.x);
     float dist = length(p);
 
-    // Map angle to [0, 2π]
+    // Normalize angle to [0, 2π]
     float pi2 = 6.28318530718;
     angle = mod(angle + pi2, pi2);
 
-    // Angle between polygon edges
+    // Compute n-gon edge distance
     float segAngle = pi2 / float(sides);
-
-    // Distance to nearest polygon edge direction
     float edgeFactor = cos(floor(0.5 + angle / segAngle) * segAngle - angle);
     float d = edgeFactor * dist;
 
-    // Discard outside
     if (d > radius)
         discard;
 

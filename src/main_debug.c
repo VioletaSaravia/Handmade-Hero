@@ -87,7 +87,7 @@ void ReloadApi(GameApi *api) {
 
 int32_t main() {
     GameApi api =
-        LoadApi(VirtualAlloc(0, 128 * 1'000'000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE), 0);
+        LoadApi(VirtualAlloc(0, 128 * 1000000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE), 0);
     if (!api.lib) {
         printf("[Fatal] [Debug] Couldn't load dll\n");
         return;
