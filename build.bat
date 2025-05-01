@@ -15,7 +15,7 @@ set WIN_LIBS=SDL3.lib SDL3_image.lib SDL3_ttf.lib
 set VENDOR_UNITS=vendor\\glad.c
 
 set INCLUDES=/Iinclude\\
-set LIBS=/LIBPATH:lib\\x64\\
+set LIBS=/LIBPATH:vendor\\win32\\
 
 if /i "%build%"=="clean" (
     del build\\debug\\game*.pdb >nul 2>&1
