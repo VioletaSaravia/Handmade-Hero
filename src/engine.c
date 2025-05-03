@@ -166,17 +166,17 @@ void UpdateTiming(TimingCtx *ctx) {
     ctx->time  = SDL_GetTicks();
     ctx->delta = GetSecondsElapsed(ctx->perfFreq, ctx->last, SDL_GetPerformanceCounter());
 
-    if (ctx->targetSpf > 0)
-        while (ctx->delta < ctx->targetSpf) {
-            SDL_DelayPrecise(100 * (ctx->targetSpf - ctx->delta));
-            ctx->delta = GetSecondsElapsed(SDL_GetPerformanceFrequency(), ctx->last,
-                                           SDL_GetPerformanceCounter());
-        }
+    // if (ctx->targetSpf > 0)
+    //     while (ctx->delta < ctx->targetSpf) {
+    //         SDL_DelayPrecise(100 * (ctx->targetSpf - ctx->delta));
+    //         ctx->delta = GetSecondsElapsed(SDL_GetPerformanceFrequency(), ctx->last,
+    //                                        SDL_GetPerformanceCounter());
+    //     }
 
     f32 msPerFrame = ctx->delta * 1000.0f;
     f32 msBehind   = (ctx->delta - ctx->targetSpf) * 1000.0f;
     f64 fps        = (f64)(ctx->perfFreq) / (f64)(SDL_GetPerformanceCounter() - ctx->last);
-    // LOG_INFO("FPS: %.2f MsPF: %.2f Ms behind: %.4f", fps, msPerFrame, msBehind);
+    LOG_INFO("FPS: %.2f MsPF: %.2f Ms behind: %.4f", fps, msPerFrame, msBehind);
 
     ctx->last = ctx->now;
     ctx->now  = SDL_GetPerformanceCounter();

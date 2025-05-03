@@ -83,9 +83,8 @@ void ShaderUse(Shader shader) {
     if (err != GL_NO_ERROR) LOG_ERROR("Error using shader: %d", err);
 
     Graphics()->activeShader = shader.id;
-    // TODO Move to game loop beginning
-    SetUniform2f("res", GetResolution());
     SetUniform1i("t", Time());
+    SetUniform2f("res", GetResolution());
     SetUniform2f("camPos", Graphics()->cam.pos);
     SetUniform1f("camZoom", Graphics()->cam.zoom);
     SetUniform1f("camRotation", Graphics()->cam.rotation);
@@ -499,8 +498,8 @@ bool CollisionRectRect(Rect a, Rect b) {
 typedef enum { SHAPE_RECT, SHAPE_LINE, SHAPE_CIRCLE, SHAPE_POLYGON, SHAPE_COUNT } Shapes;
 
 void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding, bool line, f32 thickness) {
-    ShaderUse(Graphics()->builtinShaders[SHADER_Rect]);
-    SetUniform2f("pos", rect.pos);
+    ShaderUse(Graphics()->builtinShaders[SHADER_Shapes]);
+    SetUniform2f("pos", v2Add(rect.pos, v2Scale(rect.size, 0.5)));
     SetUniform2f("size", rect.size);
     SetUniform1f("rotation", rotation);
 
@@ -520,7 +519,7 @@ void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding, bool line, f
 }
 
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness) {
-    ShaderUse(Graphics()->builtinShaders[SHADER_Rect]);
+    ShaderUse(Graphics()->builtinShaders[SHADER_Shapes]);
     SetUniform2f("pos", from);
     v2 size = v2Sub(to, from);
     // TODO Horrible.
@@ -543,8 +542,8 @@ void DrawLine(v2 from, v2 to, v4 color, f32 thickness) {
 
 void DrawHex(v2 center, f32 radius, f32 rotation, v4 color, f32 rounding, bool line,
              f32 thickness) {
-    Rect rect = {.x = center.x - radius, .y = center.y - radius, .w = radius * 2, .h = radius * 2};
-    ShaderUse(Graphics()->builtinShaders[SHADER_Rect]);
+    Rect rect = {.x = center.x, .y = center.y, .w = radius * 2, .h = radius * 2};
+    ShaderUse(Graphics()->builtinShaders[SHADER_Shapes]);
     SetUniform2f("pos", rect.pos);
     SetUniform2f("size", rect.size);
     SetUniform1f("rotation", rotation);
@@ -565,9 +564,9 @@ void DrawHex(v2 center, f32 radius, f32 rotation, v4 color, f32 rounding, bool l
 }
 
 void DrawCircle(v2 center, f32 radius, v4 color, bool line, f32 thickness) {
-    Rect rect = {.x = center.x - radius, .y = center.y - radius, .w = radius * 2, .h = radius * 2};
+    Rect rect = {.x = center.x, .y = center.y, .w = radius * 2, .h = radius * 2};
 
-    ShaderUse(Graphics()->builtinShaders[SHADER_Rect]);
+    ShaderUse(Graphics()->builtinShaders[SHADER_Shapes]);
     SetUniform2f("pos", rect.pos);
     SetUniform2f("size", rect.size);
     SetUniform1f("rotation", 0);
@@ -611,7 +610,7 @@ GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
     GraphicsCtx result = {0};
 
     result.builtinShaders[SHADER_Default] = ShaderFromPath(0, 0);
-    result.builtinShaders[SHADER_Rect] = ShaderFromPath("shaders\\rect.vert", "shaders\\rect.frag");
+    result.builtinShaders[SHADER_Shapes] = ShaderFromPath("shaders\\rect.vert", "shaders\\rect.frag");
 
     result.builtinTextures[TEX_Mouse] = NewTexture("data\\pointer.png");
 
@@ -625,6 +624,8 @@ GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
 }
 
 void UpdateGraphics(GraphicsCtx *ctx, void (*draw)()) {
+    ShaderUse(Graphics()->builtinShaders[0]);
+
     ShaderReload(&ctx->postprocessing.shader);
     for (i32 i = 0; i < SHADER_COUNT; i++) ShaderReload(&ctx->builtinShaders[i]);
     Framebufferuse(ctx->postprocessing);

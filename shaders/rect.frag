@@ -4,7 +4,9 @@ in vec2 vUV;
 
 out vec4 FragColor;
 
+// Globals
 uniform int t;
+uniform vec2 res;
 
 uniform int shape;
 uniform bool line;
@@ -19,6 +21,7 @@ uniform vec4 color;
 #define SHAPE_LINE 1
 #define SHAPE_CIRCLE 2
 #define SHAPE_HEXAGON 3
+#define SHAPE_TRIANGLE 4
 
 vec2 rotate(vec2 p, float angle) {
     float c = cos(angle);
@@ -41,68 +44,87 @@ float sdSegment(in vec2 p, in vec2 a, in vec2 b)
     return length(pa - ba * h);
 }
 
+float sdBox(in vec2 p, in vec2 b)
+{
+    vec2 d = abs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+
+float sdCircle(vec2 p, float r)
+{
+    return length(p) - r;
+}
+
+float sdRoundedBox(in vec2 p, in vec2 b, in vec4 r)
+{
+    r.xy = (p.x > 0.0) ? r.xy : r.zw;
+    r.x = (p.y > 0.0) ? r.x : r.y;
+    vec2 q = abs(p) - b + r.x;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r.x;
+}
+
+float sdHexagon(in vec2 p, in float r)
+{
+    const vec3 k = vec3(-0.866025404, 0.5, 0.577350269);
+    p = abs(p);
+    p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
+    p -= vec2(clamp(p.x, -k.z * r, k.z * r), r);
+    return length(p) * sign(p.y);
+}
+
+float sdEquilateralTriangle(in vec2 p, in float r)
+{
+    const float k = sqrt(3.0);
+    p.x = abs(p.x) - r;
+    p.y = p.y + r / k;
+    if (p.x + k * p.y > 0.0) p = vec2(p.x - k * p.y, -k * p.x - p.y) / 2.0;
+    p.x -= clamp(p.x, -2.0 * r, 0.0);
+    return -length(p) * sign(p.y);
+}
+
 void main() {
-    // vec2 cUV = vUV - 0.5;
-    // FragColor = vec4(cUV, 0, 1);
-    // return;
-    // Distance to nearest edge in normalized UV space
-    vec2 distUV = min(vUV, 1.0 - vUV);
-    // Convert to pixel space
-    vec2 distPixels = distUV * abs(size);
-    // Base alpha
-    float alpha = 1.0;
+    vec2 aspect = vec2(res.x / res.y, 1.0);
+
+    vec2 p = (vUV - pos / res) * aspect;
+    vec2 halfSize = (size / res) * aspect * 0.5;
+    float thicknessN = thickness / min(res.x, res.y);
+
+    float alpha = 1;
+    float dist = 0;
 
     switch (shape) {
         case SHAPE_RECT:
-        float roundingAbs = rounding * min(size.x, size.y);
-        // In corner region, compute distance and fade
-        if (distPixels.x < roundingAbs && distPixels.y < roundingAbs)
-        {
-            float distToCorner = length(distPixels - vec2(roundingAbs));
-            alpha = smoothstep(roundingAbs, roundingAbs - 1.0, distToCorner);
-        }
-
-        float centerDist = distance(vUV - 0.5, vec2(0));
-        float centerDistPixels = distance((vUV - 0.5) * abs(size), vec2(0));
-
-        if (line && distPixels.x > thickness && distPixels.y > thickness) alpha = 0;
-
-        FragColor = vec4(color.rgb, color.a * alpha);
-        return;
-
-        case SHAPE_LINE:
-        float dist = pointLineDistance(vUV, vec2(0), vec2(1, 1));
-        if (dist > (thickness / abs(max(size.x, size.y)))) alpha = 0;
-        FragColor = vec4(color.rgb, alpha);
-
-        return;
+        float radius = rounding * min(halfSize.x, halfSize.y);
+        dist = sdRoundedBox(p, halfSize, vec4(radius));
+        if (dist > 0) discard;
+        break;
 
         case SHAPE_CIRCLE:
-        centerDist = distance(vUV - 0.5, vec2(0));
-        centerDistPixels = distance((vUV - 0.5) * abs(size), vec2(0));
+        dist = sdCircle(p, halfSize.x);
+        if (dist > 0) discard;
+        break;
 
-        if (centerDist > 0.5) alpha = 0;
-        if (line && centerDistPixels < size.x / 2 - thickness) alpha = 0;
-
-        FragColor = vec4(color.rgb, color.a * alpha);
-        return;
+        case SHAPE_LINE:
+        dist = sdSegment(p, pos / res, (pos + size) / res);
+        if (dist > thicknessN) discard;
+        break;
 
         case SHAPE_HEXAGON:
-        vec2 p = rotate(vUV.xy - 0.5, radians(90));
-        float r = 0.425;
-        const vec3 k = vec3(-0.866025404, 0.5, 0.577350269);
-        p = abs(p);
-        p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
-        p -= vec2(clamp(p.x, -k.z * r, k.z * r), r);
+        p = rotate(p, radians(90));
+        dist = sdHexagon(p, halfSize.x);
+        if (dist > 0) discard;
+        break;
 
-        if (length(p) * sign(p.y) * 100 > 0) alpha = 0;
-        if (line && length(p) * sign(p.y) < -(thickness / min(size.x, size.y))) alpha = 0;
-
-        FragColor = vec4(color.rgb, color.a * alpha);
-        return;
+        case SHAPE_TRIANGLE: // Not implemented
+        dist = sdEquilateralTriangle(p, 0.1);
+        if (dist > 0) discard;
+        break;
 
         default:
-        FragColor = color;
-        return;
+        dist = 0;
+        break;
     }
+
+    if (line && dist < -thicknessN) discard;
+    FragColor = vec4(color.rgb, color.a * alpha);
 }

@@ -1,6 +1,6 @@
 #include "gui.h"
 
-#define BORDERS 0.2
+#define BORDERS 0.5
 #define THICKNESS 2
 
 bool GuiButton(Rect rect) {

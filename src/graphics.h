@@ -92,7 +92,7 @@ void    TextureUse(Texture tex, u32 i);
 
 typedef enum {
     SHADER_Default,
-    SHADER_Rect,
+    SHADER_Shapes,
     SHADER_COUNT,
 } BuiltinShaders;
 

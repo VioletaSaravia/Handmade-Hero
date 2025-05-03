@@ -1,7 +1,17 @@
 #version 460 core
 
+// +BUFFER +INDEXED
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aUV;
+
+// +BUFFER +INSTANCED +DYNAMIC
+// layout(location = 2) in vec2 pos;
+// layout(location = 3) in vec2 size;
+// layout(location = 4) in vec2 rotation;
+// layout(location = 5) in int shape;
+// layout(location = 6) in int line;
+// layout(location = 7) in float thickness;
+// layout(location = 8) in float rounding;
 
 out vec2 vUV;
 
@@ -42,7 +52,7 @@ void main() {
     // Flip Y if needed (OpenGL NDC Y=+1 is top)
     posNDC.y = -posNDC.y;
 
-    gl_Position = vec4(posNDC, 0.0, 1.0);
+    gl_Position = vec4(aPos, 0.0, 1.0);
 
     // vUV = (aPos + 1.0) * 0.5; // Map to [0, 1]
     vUV = aUV;

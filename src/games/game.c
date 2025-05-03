@@ -16,8 +16,14 @@ export void Setup() {
 }
 
 export void Init() {
+    S->scene       = NewArena(Memory(), 1024);
     S->precise     = NewTexture("data\\precise3x.png");
     S->preciseBold = NewTexture("data\\precise3x_bold.png");
+
+    S->poly = (Poly){.count = 10, .verts = Alloc(&S->scene, 10 * sizeof(v2))};
+    for (u32 i = 0; i < S->poly.count; i++) {
+        S->poly.verts[i] = (v2){.x = SDL_rand(640), .y = SDL_rand(360)};
+    }
 }
 
 export void Update() {}
@@ -58,7 +64,7 @@ export void Draw() {
     DrawCircle((v2){370, 225}, 30, WHITE, true, 5);
     DrawCircle((v2){410, 225}, 30, BLACK, false, 0);
     DrawRectangle((Rect){425, 200, 50, 50}, PI * 0.25 + Time() * -0.002, WHITE, 0.15, true, 5);
-    DrawRectangle((Rect){455, 200, 50, 50}, PI * 0.25 + Time() * -0.002, BLACK, 0, false, 0);
+    DrawRectangle((Rect){455, 200, 50, 50}, PI * 0.25 + Time() * -0.002, BLACK, 0.5, true, 4);
     DrawHex((v2){510, 225}, 30, PI + Time() * 0.002, WHITE, 0, true, 5);
     DrawHex((v2){540, 225}, 30, Time() * 0.002, BLACK, 0, false, 2);
 }
