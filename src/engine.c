@@ -38,6 +38,9 @@ TimingCtx *Timing() {
 GameSettings *Settings() {
     return &E->Settings;
 }
+Arena *Memory() {
+    return &E->Memory;
+}
 
 f32 Delta() {
     return Timing()->delta;
@@ -90,7 +93,8 @@ extern void EngineReloadMemory(void *memory) {
 
 export void EngineShutdown() {
     ShutdownAudio(Audio());
-    SDL_GL_DestroyContext(Window()->glCtx);
+    if (!SDL_GL_DestroyContext(Window()->glCtx))
+        LOG_ERROR("Error destroying context: %s", SDL_GetError());
     SDL_DestroyWindow(Window()->window);
     SDL_Quit();
 }
@@ -110,7 +114,7 @@ WindowCtx InitWindow(const GameSettings *settings) {
     WindowCtx buffer = {0};
 
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
-    SDL_SetAppMetadata(settings->name, settings->version, "com.violeta.handmade");
+    SDL_SetAppMetadata(settings->name, settings->version, "com.violeta.game");
     SDL_SetAppMetadataProperty("SDL_PROP_APP_METADATA_CREATOR_STRING", "Violeta Saravia");
 
     buffer.window = SDL_CreateWindow(settings->name, settings->resolution.w, settings->resolution.h,
@@ -119,12 +123,12 @@ WindowCtx InitWindow(const GameSettings *settings) {
     if (E->Settings.fullscreen) SDL_SetWindowFullscreen(buffer.window, true);
     SDL_SetWindowIcon(buffer.window, IMG_Load("data\\icon.ico"));
 
-    SDL_HideCursor();
+    // SDL_HideCursor();
 
     buffer.glCtx = SDL_GL_CreateContext(buffer.window);
     if (!SDL_GL_MakeCurrent(buffer.window, buffer.glCtx))
         LOG_FATAL("Failed to show window: %s", SDL_GetError())
-    SDL_GL_SetSwapInterval(1); // Enable vsync
+    // SDL_GL_SetSwapInterval(1); // Enable vsync
 
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress)) LOG_FATAL("Glad failed to load GL")
 
@@ -162,11 +166,12 @@ void UpdateTiming(TimingCtx *ctx) {
     ctx->time  = SDL_GetTicks();
     ctx->delta = GetSecondsElapsed(ctx->perfFreq, ctx->last, SDL_GetPerformanceCounter());
 
-    while (ctx->delta < ctx->targetSpf) {
-        SDL_Delay((u32)(1000.0 * (ctx->targetSpf - ctx->delta)));
-        ctx->delta = GetSecondsElapsed(SDL_GetPerformanceFrequency(), ctx->last,
-                                       SDL_GetPerformanceCounter());
-    }
+    if (ctx->targetSpf > 0)
+        while (ctx->delta < ctx->targetSpf) {
+            SDL_DelayPrecise(100 * (ctx->targetSpf - ctx->delta));
+            ctx->delta = GetSecondsElapsed(SDL_GetPerformanceFrequency(), ctx->last,
+                                           SDL_GetPerformanceCounter());
+        }
 
     f32 msPerFrame = ctx->delta * 1000.0f;
     f32 msBehind   = (ctx->delta - ctx->targetSpf) * 1000.0f;

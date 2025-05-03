@@ -6,16 +6,23 @@ layout(location = 1) in vec2 aTexCoord;
 
 out vec2 texCoord;
 
+// Globals
+uniform int t;
 uniform vec2 res;
+
+// Camera
+uniform vec2 camPos;
+uniform float camZoom;
+uniform float camRotation;
+
+// Locals
 uniform vec2 pos;
 uniform vec2 size;
-uniform float scale;
-uniform float gScale;
-uniform vec2 camera;
+uniform float rotation;
 
 void main() {
-    vec2 pos_n = (pos - camera) / res;
-    vec2 size_n = gScale * scale * size / res;
+    vec2 pos_n = (pos - camPos) / res;
+    vec2 size_n = (camZoom + 1) * size / res;
 
     texCoord = aTexCoord;
 

@@ -37,7 +37,7 @@ Shader ShaderFromPath(cstr vertFile, cstr fragFile) {
     string vertSrc = ReadEntireFile(vertFile);
     string fragSrc = ReadEntireFile(fragFile);
 
-    // FIXME(violeta): Esto es sólo para evitar errores al hacer reload.
+    // TODO(violeta): Esto es sólo para evitar errores al hacer reload.
     // Cambiar por algo mejor.
     while (!vertSrc.data) vertSrc = ReadEntireFile(vertFile);
     while (!fragSrc.data) fragSrc = ReadEntireFile(fragFile);
@@ -79,12 +79,16 @@ Shader ShaderFromPath(cstr vertFile, cstr fragFile) {
 
 void ShaderUse(Shader shader) {
     glUseProgram(shader.id);
+    u32 err = glGetError();
+    if (err != GL_NO_ERROR) LOG_ERROR("Error using shader: %d", err);
+
     Graphics()->activeShader = shader.id;
-    SetUniform1i("t", Time());
-    SetUniform1f("gScale", 1);  // TODO Implement bottom and remove
-    SetUniform1f("camZoom", 0); // Graphics()->cam.scale);
-    SetUniform2f("camera", Graphics()->cam.pos);
+    // TODO Move to game loop beginning
     SetUniform2f("res", GetResolution());
+    SetUniform1i("t", Time());
+    SetUniform2f("camPos", Graphics()->cam.pos);
+    SetUniform1f("camZoom", Graphics()->cam.zoom);
+    SetUniform1f("camRotation", Graphics()->cam.rotation);
 }
 
 void ShaderReload(Shader *shader) {
@@ -261,72 +265,100 @@ Texture TextureFromMemory(void *memory, v2i size) {
     return result;
 }
 
-void TextureUse(Texture tex) {
-    glActiveTexture(GL_TEXTURE0);
+void TextureUse(Texture tex, u32 i) {
+    glActiveTexture(0x84C0 + i);
     glBindTexture(GL_TEXTURE_2D, tex.id);
+    u32 err = glGetError();
+    if (err != GL_NO_ERROR) LOG_ERROR("Error binding texture: %d", err);
 }
 
-void VAOInit(VAO *vao, Arena *alloc) {
+void VAOInit(VAO *vao, Arena *alloc, u32 maxInstances) {
     glGenVertexArrays(1, &vao->id);
     glBindVertexArray(vao->id);
+    u32 attribIdx = 0;
 
     for (u64 i = 0; i < vao->count; i++) {
-        BOInit(&vao->objs[i], alloc);
+        u32 err = BOInit(&vao->objs[i], alloc, maxInstances, &attribIdx);
+        if (err != 0) {
+            LOG_ERROR("Error initializing BO in VAO %s: %u", vao->source, err);
+            return;
+        }
     }
+
+    glBindVertexArray(0);
 }
 
-void BOInit(BO *obj, Arena *alloc) {
+u32 BOInit(BO *obj, Arena *alloc, u32 maxInstances, u32 *attribIdx) {
     u32 err = 0;
     glGenBuffers(1, &obj->id);
     u32 target = obj->ebo ? GL_ELEMENT_ARRAY_BUFFER : GL_ARRAY_BUFFER;
     glBindBuffer(target, obj->id);
 
-    if (alloc) obj->buf = Alloc(alloc, 128); // TODO: How do we handle the allocation?
+    u32 sizePerInstance = 0;
+    for (size_t i = 0; i < obj->attribCount; i++) {
+        u32 size = attribTypeSize(obj->attribs[i].type);
+        sizePerInstance += (size * obj->attribs[i].count);
+    }
+
+    // Decide how large this BO's buffer should be, if it wasn't manually set previously, based on
+    // maxInstances. TODO: What if it's not an instanced buffer AND it wasn't set manually?
+    if (alloc && maxInstances > 0 && !obj->bufSize && !obj->buf) {
+        obj->bufSize = sizePerInstance * maxInstances;
+        obj->buf     = Alloc(alloc, obj->bufSize); // TODO: Align errors?
+    }
+
     glBufferData(target, obj->bufSize, obj->buf, (u32)obj->drawType);
     err = glGetError();
-    if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
+    if (err != GL_NO_ERROR) return err;
 
-    if (obj->ebo) return;
+    if (obj->ebo) return 0;
 
     u64 offset = 0;
     for (size_t i = 0; i < obj->attribCount; i++) {
         Attrib attrib = obj->attribs[i];
+        u32    idx    = (*attribIdx)++;
+
         switch (attrib.type) {
         case ATTRIB_FLOAT:
-            glVertexAttribPointer(i, attrib.count, GL_FLOAT, GL_FALSE, obj->stride, (void *)offset);
+            glVertexAttribPointer(idx, attrib.count, GL_FLOAT, GL_FALSE, obj->stride,
+                                  (void *)offset);
             err = glGetError();
-            if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
+            if (err != GL_NO_ERROR) return err;
             offset += attrib.count * sizeof(f32);
-            glEnableVertexAttribArray(i);
+            glEnableVertexAttribArray(idx);
             err = glGetError();
-            if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
-            if (obj->perInstance) glVertexAttribDivisor(i, 1);
+            if (err != GL_NO_ERROR) return err;
+            if (obj->perInstance) glVertexAttribDivisor(idx, 1);
 
             break;
 
         case ATTRIB_INT:
-            glVertexAttribIPointer(i, attrib.count, GL_INT, obj->stride, (void *)offset);
+            glVertexAttribIPointer(idx, attrib.count, GL_INT, obj->stride, (void *)offset);
             err = glGetError();
-            if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
-            glEnableVertexAttribArray(i);
+            if (err != GL_NO_ERROR) return err;
+            glEnableVertexAttribArray(idx);
             err = glGetError();
-            if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
-            if (obj->perInstance) glVertexAttribDivisor(i, 1);
+            if (err != GL_NO_ERROR) return err;
+            if (obj->perInstance) glVertexAttribDivisor(idx, 1);
             break;
 
-        default: LOG_ERROR("Unsupported attribute type"); return;
+        default: LOG_ERROR("Unsupported attribute type: %u", attrib.type); return -1;
         }
     }
+
+    return 0;
 }
 
 void VAOUse(VAO vao) {
     glBindVertexArray(vao.id);
+    u32 err = glGetError();
+    if (err != GL_NO_ERROR) LOG_ERROR("Error binding VAO: %u", err);
 }
 
 void BOUpdate(BO obj) {
     u32 target = obj.ebo ? GL_ELEMENT_ARRAY_BUFFER : GL_ARRAY_BUFFER;
     glBindBuffer(target, obj.id);
-    // NOTE: Reemplaza todo el buffer actualmente, pero podría tener offset y size!
+    // TODO: Reemplaza todo el buffer actualmente, pero podría tener offset y size
     glBufferSubData(target, 0, obj.bufSize, obj.buf);
 }
 
@@ -389,7 +421,7 @@ VAO VAOFromShader(cstr path) {
             continue;
         }
 
-        if (bo && strstr(line, "layout(")) {
+        if (bo && strstr(line, "layout(") && !(strstr(line, "//layout"))) {
             cstr typeStart = strstr(line, "in ");
             if (!typeStart) continue;
             typeStart += 3;
@@ -427,7 +459,8 @@ VAO VAOFromShader(cstr path) {
                        .attribCount = 0};
     }
 
-    vao.count = boIndex;
+    vao.count  = boIndex;
+    vao.source = path;
     return vao;
 }
 
@@ -448,206 +481,143 @@ void DrawMouse() {
     Texture mouseTex = Graphics()->builtinTextures[TEX_Mouse];
     SetUniform2f("size", (v2){mouseTex.size.x, mouseTex.size.y});
     SetUniform4f("color", WHITE);
-    TextureUse(mouseTex);
+    TextureUse(mouseTex, 0);
     VAOUse(Graphics()->builtinVAOs[VAO_SQUARE]);
     DrawInstances(1);
-}
-
-const f32 CharmapCoords[256] = {
-    [' '] = 0,   ['A'] = 1,  ['B'] = 2,  ['C'] = 3,  ['D'] = 4,  ['E'] = 5,  ['F'] = 6,
-    ['G'] = 7,   ['H'] = 8,  ['I'] = 9,  ['J'] = 10, ['K'] = 11, ['L'] = 12, ['M'] = 13,
-    ['N'] = 14,  ['O'] = 15, ['P'] = 16, ['Q'] = 17, ['R'] = 18, ['S'] = 19, ['T'] = 20,
-    ['U'] = 21,  ['V'] = 22, ['W'] = 23, ['X'] = 24, ['Y'] = 25, ['Z'] = 26, ['?'] = 27,
-    ['!'] = 28,  ['.'] = 29, [','] = 30, ['-'] = 31, ['+'] = 32, ['a'] = 33, ['b'] = 34,
-    ['c'] = 35,  ['d'] = 36, ['e'] = 37, ['f'] = 38, ['g'] = 39, ['h'] = 40, ['i'] = 41,
-    ['j'] = 42,  ['k'] = 43, ['l'] = 44, ['m'] = 45, ['n'] = 46, ['o'] = 47, ['p'] = 48,
-    ['q'] = 49,  ['r'] = 50, ['s'] = 51, ['t'] = 52, ['u'] = 53, ['v'] = 54, ['w'] = 55,
-    ['x'] = 56,  ['y'] = 57, ['z'] = 58, [':'] = 59, [';'] = 60, ['"'] = 61, ['('] = 62,
-    [')'] = 63,  ['@'] = 64, ['&'] = 65, ['1'] = 66, ['2'] = 67, ['3'] = 68, ['4'] = 69,
-    ['5'] = 70,  ['6'] = 71, ['7'] = 72, ['8'] = 73, ['9'] = 74, ['0'] = 75, ['%'] = 76,
-    ['^'] = 77,  ['*'] = 78, ['{'] = 79, ['}'] = 80, ['='] = 81, ['#'] = 82, ['/'] = 83,
-    ['\\'] = 84, ['$'] = 85, [163] = 86, ['['] = 87, [']'] = 88, ['<'] = 89, ['>'] = 90,
-    ['\''] = 91, ['`'] = 92, ['~'] = 93};
-
-const i32 MonogramCoords[256] = {
-    [' '] = 0,  ['!'] = 1,  ['"'] = 2,  ['#'] = 3,  ['$'] = 4,   ['%'] = 5,  ['&'] = 6,  ['\''] = 7,
-    ['('] = 8,  [')'] = 9,  ['*'] = 10, ['+'] = 11, [','] = 12,  ['-'] = 13, ['.'] = 14, ['/'] = 15,
-    ['0'] = 16, ['1'] = 17, ['2'] = 18, ['3'] = 19, ['4'] = 20,  ['5'] = 21, ['6'] = 22, ['7'] = 23,
-    ['8'] = 24, ['9'] = 25, [':'] = 26, [';'] = 27, ['<'] = 28,  ['='] = 29, ['>'] = 30, ['?'] = 31,
-    ['@'] = 32, ['A'] = 33, ['B'] = 34, ['C'] = 35, ['D'] = 36,  ['E'] = 37, ['F'] = 38, ['G'] = 39,
-    ['H'] = 40, ['I'] = 41, ['J'] = 42, ['K'] = 43, ['L'] = 44,  ['M'] = 45, ['N'] = 46, ['O'] = 47,
-    ['P'] = 48, ['Q'] = 49, ['R'] = 50, ['S'] = 51, ['T'] = 52,  ['U'] = 53, ['V'] = 54, ['W'] = 55,
-    ['X'] = 56, ['Y'] = 57, ['Z'] = 58, ['['] = 59, ['\\'] = 60, [']'] = 61, ['^'] = 62, ['_'] = 63,
-    ['`'] = 64, ['a'] = 65, ['b'] = 66, ['c'] = 67, ['d'] = 68,  ['e'] = 69, ['f'] = 70, ['g'] = 71,
-    ['h'] = 72, ['i'] = 73, ['j'] = 74, ['k'] = 75, ['l'] = 76,  ['m'] = 77, ['n'] = 78, ['o'] = 79,
-    ['p'] = 80, ['q'] = 81, ['r'] = 82, ['s'] = 83, ['t'] = 84,  ['u'] = 85, ['v'] = 86, ['w'] = 87,
-    ['x'] = 88, ['y'] = 89, ['z'] = 90, ['{'] = 91, ['|'] = 92,  ['}'] = 93, ['~'] = 94};
-
-u32 MapStringToTextBox(cstr text, i32 width, v2 tSize, void *buf) {
-    if (!width) width = INT32_MAX;
-
-    u64 textLen = strlen(text);
-    u32 iText = 0, iBox = 0, nextSpace = 0;
-
-    bool bold = false, italics = false;
-    bool addWhitespace = false;
-    f32  size          = tSize.x * tSize.y;
-    while (iText < textLen && iBox < size) {
-        if (!addWhitespace)
-            for (u32 i = iText; i < textLen; i++) {
-                if (text[i] == ' ' || (i == (textLen - 1))) {
-                    nextSpace = i - iText;
-                    break;
-                }
-            }
-
-        addWhitespace = nextSpace >= width - (iBox % width);
-
-        if (text[iText] == '\b') {
-            bold ^= true;
-            iText++;
-            continue;
-        }
-        if (text[iText] == '\t') {
-            italics ^= true;
-            iText++;
-            continue;
-        }
-
-        ((i32 *)buf)[iBox] = !addWhitespace ? MonogramCoords[text[iText]] : 0;
-        // if (bold) tilemap->fontVbo[iBox] = 1;
-        // if (italics) tilemap->fontVbo[iBox] = 2;
-        // if (bold && italics) tilemap->fontVbo[iBox] = 3;
-
-        if (!addWhitespace) iText++;
-        iBox++;
-
-        addWhitespace = addWhitespace && ((iBox % width) != 0);
-    }
-
-    if (textLen < size)
-        for (i32 i = iBox; i < size; i++) {
-            ((i32 *)buf)[i] = 0;
-        }
-
-    return iBox;
-}
-
-void DrawText(VAO *vao, Texture tex, v2 tSize, v2 tileSize, const cstr text, v2 pos, i32 width,
-              f32 scale) {
-    u32 iBox = MapStringToTextBox(text, width, tSize, vao->objs[1].buf);
-
-    ShaderUse(Graphics()->builtinShaders[SHADER_Tiled]);
-
-    SetUniform2f("tile_size", tSize);
-    v2i tilesetSize = (v2i){
-        tex.size.x / tileSize.x,
-        tex.size.y / tileSize.y,
-    };
-
-    SetUniform2i("tileset_size", tilesetSize);
-    SetUniform1i("width", width ? width : INT32_MAX);
-    SetUniform2f("res", GetResolution());
-    SetUniform2f("pos", pos);
-    SetUniform1f("scale", scale ? scale * 2 : 2);
-    SetUniform1i("tex0", 0);
-
-    TextureUse(tex);
-
-    VAOUse(*vao);
-
-    // f32 tileSize = tilemap->size.x * tilemap->size.y;
-    BOUpdate(vao->objs[1]);
-
-    DrawInstances(iBox);
 }
 
 bool CollisionRectRect(Rect a, Rect b) {
     return a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
 }
 
-void DrawRectangle(Rect rect, v4 color, f32 radius) {
-    u32 err = 0;
+#define LOG_GL_ERROR(msg)                                                                          \
+    do {                                                                                           \
+        u32 __err = glGetError();                                                                  \
+        if (__err != GL_NO_ERROR) LOG_ERROR(msg ": %u", __err);                                    \
+    } while (0);
+
+typedef enum { SHAPE_RECT, SHAPE_LINE, SHAPE_CIRCLE, SHAPE_POLYGON, SHAPE_COUNT } Shapes;
+
+void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding, bool line, f32 thickness) {
     ShaderUse(Graphics()->builtinShaders[SHADER_Rect]);
     SetUniform2f("pos", rect.pos);
     SetUniform2f("size", rect.size);
-    SetUniform2f("res", GetResolution());
-    SetUniform4f("color", color);
-    SetUniform1f("radius", radius);
-    glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
-    err = glGetError();
-    if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
-    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
-    err = glGetError();
-    if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
-    glBindVertexArray(0);
-}
-
-void DrawNgon(Rect rect, v4 color, f32 radius, i32 sides, f32 rotation) {
-    u32 err = 0;
-    ShaderUse(Graphics()->builtinShaders[SHADER_Ngon]);
-    SetUniform2f("pos", rect.pos);
-    SetUniform2f("size", rect.size);
-    SetUniform2f("res", GetResolution());
-    SetUniform4f("color", color);
-    SetUniform1f("radius", radius);
     SetUniform1f("rotation", rotation);
-    SetUniform1i("sides", sides);
+
+    SetUniform1i("shape", SHAPE_RECT);
+    SetUniform1b("line", line);
+    SetUniform1f("thickness", thickness);
+    SetUniform1f("rounding", rounding);
+    SetUniform4f("color", color);
+
     glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
-    err = glGetError();
-    if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
-    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
-    err = glGetError();
-    if (err != GL_NO_ERROR) printf("ERROR: 0x%X\n", err);
+    LOG_GL_ERROR("VAO binding failed");
+    {
+        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+        LOG_GL_ERROR("Drawing failed");
+    }
     glBindVertexArray(0);
 }
 
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness) {
-    ShaderUse(Graphics()->builtinShaders[SHADER_Line]);
+    ShaderUse(Graphics()->builtinShaders[SHADER_Rect]);
     SetUniform2f("pos", from);
-    SetUniform1f("thickness", thickness ? thickness : 1);
-    SetUniform2f("size", v2Sub(to, from));
-    SetUniform2f("res", GetResolution());
+    v2 size = v2Sub(to, from);
+    // TODO Horrible.
+    size = (v2){size.x == 0 ? 1 : size.x, size.y == 0 ? 1 : size.y};
+    SetUniform2f("size", size);
+    SetUniform1f("rotation", 0);
+
+    SetUniform1i("shape", SHAPE_LINE);
+    SetUniform1f("thickness", thickness);
     SetUniform4f("color", color);
+
     glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
-    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+    LOG_GL_ERROR("VAO binding failed");
+    {
+        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+        LOG_GL_ERROR("Drawing failed");
+    }
+    glBindVertexArray(0);
+}
+
+void DrawHex(v2 center, f32 radius, f32 rotation, v4 color, f32 rounding, bool line,
+             f32 thickness) {
+    Rect rect = {.x = center.x - radius, .y = center.y - radius, .w = radius * 2, .h = radius * 2};
+    ShaderUse(Graphics()->builtinShaders[SHADER_Rect]);
+    SetUniform2f("pos", rect.pos);
+    SetUniform2f("size", rect.size);
+    SetUniform1f("rotation", rotation);
+
+    SetUniform1i("shape", SHAPE_POLYGON);
+    SetUniform1b("line", line);
+    SetUniform1f("thickness", thickness);
+    SetUniform1f("rounding", rounding);
+    SetUniform4f("color", color);
+
+    glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
+    LOG_GL_ERROR("VAO binding failed");
+    {
+        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+        LOG_GL_ERROR("Drawing failed");
+    }
+    glBindVertexArray(0);
+}
+
+void DrawCircle(v2 center, f32 radius, v4 color, bool line, f32 thickness) {
+    Rect rect = {.x = center.x - radius, .y = center.y - radius, .w = radius * 2, .h = radius * 2};
+
+    ShaderUse(Graphics()->builtinShaders[SHADER_Rect]);
+    SetUniform2f("pos", rect.pos);
+    SetUniform2f("size", rect.size);
+    SetUniform1f("rotation", 0);
+
+    SetUniform1i("shape", SHAPE_CIRCLE);
+    SetUniform1b("line", line);
+    SetUniform1f("thickness", thickness);
+    SetUniform1f("rounding", 0);
+    SetUniform4f("color", color);
+
+    glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
+    LOG_GL_ERROR("VAO binding failed");
+    {
+        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+        LOG_GL_ERROR("Drawing failed");
+    }
     glBindVertexArray(0);
 }
 
 void DrawPoly(Poly poly, v4 color, f32 thickness) {
-    // TODO Inefficient
-    for (size_t i = 0; i < poly.count - 1; i++) {
+    for (u32 i = 0; i < poly.count - 1; i++) {
         DrawLine(poly.verts[i], poly.verts[i + 1], color, thickness);
     }
 }
 
-void DrawCircle(v2 pos, v4 color, f32 radius) {}
+global f32 sqVerts[] = {1, 1, 0, 1, 0, 1, -1, 0, 1, 1, -1, -1, 1, 0, 1, -1, 1, 0, 0, 0};
+global u32 sqIds[]   = {0, 1, 3, 1, 2, 3};
 
-global f32 squareVerts[] = {1, 1, 0, 1, 0, 1, -1, 0, 1, 1, -1, -1, 1, 0, 1, -1, 1, 0, 0, 0};
-global u32 squareIds[]   = {0, 1, 3, 1, 2, 3};
+void VAOLoadMesh(VAO *vao, f32 *verts, u32 vertSize, u32 *ids, u32 idSize) {
+    vao->objs[0].buf     = verts;
+    vao->objs[0].bufSize = vertSize;
+
+    for (u32 i = 0; i < vao->count; i++) {
+        if (!vao->objs[i].ebo) continue;
+        vao->objs[i].buf     = ids;
+        vao->objs[i].bufSize = idSize;
+    }
+}
 
 GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
     GraphicsCtx result = {0};
 
     result.builtinShaders[SHADER_Default] = ShaderFromPath(0, 0);
-    result.builtinShaders[SHADER_Tiled]   = ShaderFromPath("shaders\\tiled.vert", 0);
-    result.builtinShaders[SHADER_Text] = ShaderFromPath("shaders\\text.vert", "shaders\\text.frag");
     result.builtinShaders[SHADER_Rect] = ShaderFromPath("shaders\\rect.vert", "shaders\\rect.frag");
-    result.builtinShaders[SHADER_Line] = ShaderFromPath("shaders\\line.vert", "shaders\\line.frag");
-    result.builtinShaders[SHADER_Ngon] = ShaderFromPath("shaders\\rect.vert", "shaders\\ngon.frag");
 
     result.builtinTextures[TEX_Mouse] = NewTexture("data\\pointer.png");
 
-    result.builtinVAOs[VAO_SQUARE]                 = VAOFromShader("shaders\\default.vert");
-    result.builtinVAOs[VAO_SQUARE].objs[0].buf     = squareVerts;
-    result.builtinVAOs[VAO_SQUARE].objs[0].bufSize = 20 * sizeof(f32);
-    result.builtinVAOs[VAO_SQUARE].objs[1].buf     = squareIds;
-    result.builtinVAOs[VAO_SQUARE].objs[1].bufSize = 6 * sizeof(i32);
-    VAOInit(&result.builtinVAOs[VAO_SQUARE], 0);
-
-    result.builtinVAOs[VAO_TEXT] = VAOFromShader("shaders\\text.vert");
-    // TODO Allocs
-    VAOInit(&result.builtinVAOs[VAO_TEXT], 0);
+    result.builtinVAOs[VAO_SQUARE] = VAOFromShader("shaders\\default.vert");
+    VAOLoadMesh(&result.builtinVAOs[VAO_SQUARE], sqVerts, sizeof(sqVerts), sqIds, sizeof(sqIds));
+    VAOInit(&result.builtinVAOs[VAO_SQUARE], 0, 0);
 
     result.postprocessing = NewFramebuffer("shaders\\post.frag");
 
@@ -662,7 +632,7 @@ void UpdateGraphics(GraphicsCtx *ctx, void (*draw)()) {
         ClearScreen((v4){0.3f, 0.4f, 0.4f, 1.0f});
         draw();
         CameraEnd();
-        if (!Settings()->disableMouse) DrawMouse();
+        // if (!Settings()->disableMouse) DrawMouse();
     }
     FramebufferDraw(ctx->postprocessing);
 }

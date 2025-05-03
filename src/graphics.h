@@ -5,6 +5,7 @@ typedef struct {
     v2  pos;
     f32 zoom;
     f32 speed;
+    f32 rotation;
 } Camera;
 void CameraBegin(Camera cam);
 void CameraEnd();
@@ -52,22 +53,23 @@ typedef struct {
     DrawType drawType;
     bool     ebo;
     bool     perInstance;
-    void    *buf;
-    u32      bufSize;
+    void    *buf;     // Set by BOInit()
+    u32      bufSize; // Set by BoInit()
     u32      stride;
     Attrib   attribs[4];
     u32      attribCount;
 } BO;
-void BOInit(BO *obj, Arena *alloc);
+u32  BOInit(BO *obj, Arena *alloc, u32 maxInstances, u32 *attribIdx);
 void BOUpdate(BO obj);
 
 typedef struct {
-    u32 id;
-    BO  objs[8];
-    u32 count;
+    cstr source;
+    u32  id;
+    BO   objs[8];
+    u32  count;
 } VAO;
 VAO  VAOFromShader(cstr path);
-void VAOInit(VAO *vao, Arena *alloc);
+void VAOInit(VAO *vao, Arena *alloc, u32 maxInstances);
 void VAOUse(VAO vao);
 
 typedef struct {
@@ -86,15 +88,11 @@ typedef struct Texture {
 } Texture;
 Texture NewTexture(const cstr path);
 Texture TextureFromMemory(void *memory, v2i size);
-void    TextureUse(Texture tex);
+void    TextureUse(Texture tex, u32 i);
 
 typedef enum {
     SHADER_Default,
-    SHADER_Tiled,
-    SHADER_Text,
     SHADER_Rect,
-    SHADER_Line,
-    SHADER_Ngon,
     SHADER_COUNT,
 } BuiltinShaders;
 
@@ -121,11 +119,12 @@ v2   Mouse();
 v2   MouseInWorld(Camera cam);
 void ClearScreen(v4 color);
 void DrawInstances(u32 count);
-void DrawRectangle(Rect rect, v4 color, f32 radius);
+void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding, bool line, f32 thickness);
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness);
-void DrawCircle(v2 pos, v4 color, f32 radius);
+void DrawCircle(v2 center, f32 radius, v4 color, bool line, f32 thickness);
+void DrawHex(v2 center, f32 radius, f32 rotation, v4 color, f32 rounding, bool line,
+              f32 thickness);
 void DrawPoly(Poly poly, v4 color, f32 thickness);
-void DrawNgon(Rect rect, v4 color, f32 radius, i32 sides, f32 smooth);
 
 #define WHITE (v4){1, 1, 1, 1}
 #define BLACK (v4){0, 0, 0, 1}

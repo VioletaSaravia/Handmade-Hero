@@ -178,11 +178,11 @@ u64 GetLastWriteTime(cstr file) {
     u64         result = 0;
     struct stat fileStat;
     if (stat(file, &fileStat) != 0) {
-        perror("Failed to get file attributes");
+        LOG_ERROR("Failed to get file attributes for %s", file);
         return 0;
     }
-    result = (u64)fileStat.st_mtime;
-    return result;
+
+    return (u64)fileStat.st_mtime;
 }
 
 string ReadEntireFile(const cstr filename) {

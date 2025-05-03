@@ -19,7 +19,7 @@ typedef struct WindowCtx {
     bool          fullscreen, quit;
 } WindowCtx;
 WindowCtx       *Window();
-intern WindowCtx InitWindow();
+intern WindowCtx InitWindow(const GameSettings *settings);
 void             UpdateWindow(WindowCtx *ctx);
 
 typedef struct GraphicsCtx GraphicsCtx;
@@ -31,8 +31,8 @@ typedef struct {
 } TimingCtx;
 intern TimingCtx InitTiming(f32 refreshRate);
 void             UpdateTiming(TimingCtx *ctx);
-inline f32       Delta();
-inline u64       Time();
+f32              Delta();
+u64              Time();
 inline f32       GetSecondsElapsed(u64 perfCountFreq, u64 start, u64 end) {
     return (f32)(end - start) / (f32)(perfCountFreq);
 }
@@ -56,5 +56,6 @@ export void  EngineShutdown();
 export void *EngineGetMemory();
 export bool  EngineIsRunning();
 
-f32 Delta();
-u64 Time();
+Arena *Memory();
+f32    Delta();
+u64    Time();
