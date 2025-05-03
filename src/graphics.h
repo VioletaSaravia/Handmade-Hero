@@ -119,11 +119,11 @@ v2   Mouse();
 v2   MouseInWorld(Camera cam);
 void ClearScreen(v4 color);
 void DrawInstances(u32 count);
+void DrawElement();
 void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding, bool line, f32 thickness);
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness);
 void DrawCircle(v2 center, f32 radius, v4 color, bool line, f32 thickness);
-void DrawHex(v2 center, f32 radius, f32 rotation, v4 color, f32 rounding, bool line,
-              f32 thickness);
+void DrawHex(v2 center, f32 radius, f32 rotation, v4 color, f32 rounding, bool line, f32 thickness);
 void DrawPoly(Poly poly, v4 color, f32 thickness);
 
 #define WHITE (v4){1, 1, 1, 1}

@@ -467,6 +467,10 @@ void DrawInstances(u32 count) {
     glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, count);
 }
 
+void DrawElement(){
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+}
+
 void ClearScreen(v4 color) {
     glClearColor(color.r, color.g, color.b, color.a);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -495,7 +499,7 @@ bool CollisionRectRect(Rect a, Rect b) {
         if (__err != GL_NO_ERROR) LOG_ERROR(msg ": %u", __err);                                    \
     } while (0);
 
-typedef enum { SHAPE_RECT, SHAPE_LINE, SHAPE_CIRCLE, SHAPE_POLYGON, SHAPE_COUNT } Shapes;
+typedef enum { SHAPE_RECT, SHAPE_LINE, SHAPE_CIRCLE, SHAPE_HEXAGON, SHAPE_COUNT } Shapes;
 
 void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding, bool line, f32 thickness) {
     ShaderUse(Graphics()->builtinShaders[SHADER_Shapes]);
@@ -512,7 +516,7 @@ void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding, bool line, f
     glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
     LOG_GL_ERROR("VAO binding failed");
     {
-        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+        DrawElement();
         LOG_GL_ERROR("Drawing failed");
     }
     glBindVertexArray(0);
@@ -534,7 +538,7 @@ void DrawLine(v2 from, v2 to, v4 color, f32 thickness) {
     glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
     LOG_GL_ERROR("VAO binding failed");
     {
-        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+        DrawElement();
         LOG_GL_ERROR("Drawing failed");
     }
     glBindVertexArray(0);
@@ -548,7 +552,7 @@ void DrawHex(v2 center, f32 radius, f32 rotation, v4 color, f32 rounding, bool l
     SetUniform2f("size", rect.size);
     SetUniform1f("rotation", rotation);
 
-    SetUniform1i("shape", SHAPE_POLYGON);
+    SetUniform1i("shape", SHAPE_HEXAGON);
     SetUniform1b("line", line);
     SetUniform1f("thickness", thickness);
     SetUniform1f("rounding", rounding);
@@ -557,7 +561,7 @@ void DrawHex(v2 center, f32 radius, f32 rotation, v4 color, f32 rounding, bool l
     glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
     LOG_GL_ERROR("VAO binding failed");
     {
-        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+        DrawElement();
         LOG_GL_ERROR("Drawing failed");
     }
     glBindVertexArray(0);
@@ -580,7 +584,7 @@ void DrawCircle(v2 center, f32 radius, v4 color, bool line, f32 thickness) {
     glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
     LOG_GL_ERROR("VAO binding failed");
     {
-        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, 1);
+        DrawElement();
         LOG_GL_ERROR("Drawing failed");
     }
     glBindVertexArray(0);
