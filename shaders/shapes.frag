@@ -86,7 +86,7 @@ void main() {
     vec2 aspect = vec2(res.x / res.y, 1.0);
 
     vec2 p = (vUV - pos / res) * aspect;
-    vec2 halfSize = (size / res) * aspect * 0.5;
+    vec2 halfSizeN = (size / res) * aspect * 0.5;
     float thicknessN = thickness / min(res.x, res.y);
 
     float alpha = 1;
@@ -94,13 +94,13 @@ void main() {
 
     switch (shape) {
         case SHAPE_RECT:
-        float radius = rounding * min(halfSize.x, halfSize.y);
-        dist = sdRoundedBox(p, halfSize, vec4(radius));
+        float radius = rounding * min(halfSizeN.x, halfSizeN.y);
+        dist = sdRoundedBox(p, halfSizeN, vec4(radius));
         if (dist > 0) discard;
         break;
 
         case SHAPE_CIRCLE:
-        dist = sdCircle(p, halfSize.x);
+        dist = sdCircle(p, halfSizeN.x);
         if (dist > 0) discard;
         break;
 
@@ -111,7 +111,7 @@ void main() {
 
         case SHAPE_HEXAGON:
         p = rotate(p, radians(90));
-        dist = sdHexagon(p, halfSize.x);
+        dist = sdHexagon(p, halfSizeN.x);
         if (dist > 0) discard;
         break;
 

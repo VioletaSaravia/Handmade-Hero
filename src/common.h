@@ -356,8 +356,19 @@ inline void Log(LogLevel level, cstr ctx, cstr msg, ...) {
 
 #if LOG_LEVEL <= 2
 #define LOG_ERROR(msg, ...) Log(LEVEL_ERROR, __func__, msg, ##__VA_ARGS__)
+#define LOG_GL_ERROR(msg)                                                                          \
+    do {                                                                                           \
+        u32 __err = glGetError();                                                                  \
+        if (__err != GL_NO_ERROR) LOG_ERROR(msg ": %u", __err);                                    \
+    } while (0);
+#define SDL_CHECK(func, msg, ...)                                                                  \
+    do {                                                                                           \
+        if (!func) LOG_ERROR(msg ": %s", SDL_GetError());                           \
+    } while (0);
 #else
 #define LOG_ERROR(msg)
+#define LOG_GL_ERROR(msg)
+#define SDL_CHECK(func, msg) (func)
 #endif
 
 #if LOG_LEVEL <= 3

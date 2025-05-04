@@ -19,6 +19,7 @@ export void Init() {
     S->scene       = NewArena(Memory(), 1024);
     S->precise     = NewTexture("data\\precise3x.png");
     S->preciseBold = NewTexture("data\\precise3x_bold.png");
+    
 
     S->poly = (Poly){.count = 10, .verts = Alloc(&S->scene, 10 * sizeof(v2))};
     for (u32 i = 0; i < S->poly.count; i++) {
@@ -26,9 +27,21 @@ export void Init() {
     }
 }
 
-export void Update() {}
+export void Update() {
+    if (GetKey(KEY_E) >= Pressed) S->cam.rotation -= 2 * Delta();
+    if (GetKey(KEY_Q) >= Pressed) S->cam.rotation += 2 * Delta();
+    if (GetKey(KEY_A) >= Pressed) S->cam.pos.x -= 4 * Delta();
+    if (GetKey(KEY_D) >= Pressed) S->cam.pos.x += 4 * Delta();
+    if (GetKey(KEY_W) >= Pressed) S->cam.pos.y += 4 * Delta();
+    if (GetKey(KEY_S) >= Pressed) S->cam.pos.y -= 4 * Delta();
+    if (GetKey(KEY_F) >= Pressed) S->cam.zoom += 1 * Delta();
+    if (GetKey(KEY_C) >= Pressed) S->cam.zoom -= 1 * Delta();
+    if (GetKey(KEY_R) >= JustPressed) S->cam = (Camera){0};
+    printf("%.2f", S->cam.rotation);
+}
 
 export void Draw() {
+    CameraBegin(S->cam);
     ClearScreen((v4){0.4, 0.2, 0.3, 1.0});
 
     for (size_t i = 0; i < 10; i++) {

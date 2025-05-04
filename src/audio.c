@@ -32,8 +32,8 @@ void AudioStreamCallback(void *userData, SDL_AudioStream *stream, i32 additional
         s->played += toWrite * frameSize;
     }
 
-    if (!SDL_PutAudioStreamData(stream, temp, frameCount * frameSize))
-        LOG_ERROR("Couldn't put data in audio stream: %s", SDL_GetError());
+    SDL_CHECK(SDL_PutAudioStreamData(stream, temp, frameCount * frameSize),
+              "Couldn't put data in audio stream");
 }
 
 AudioCtx InitAudio() {
@@ -50,13 +50,10 @@ AudioCtx InitAudio() {
 
     result.stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec,
                                               AudioStreamCallback, result.sounds);
-    if (!result.stream) LOG_ERROR("Couldn't open audio device stream: %s", SDL_GetError());
-
-    if (!SDL_GetAudioStreamFormat(result.stream, &result.srcSpec, &result.dstSpec))
-        LOG_ERROR("Can't resume audio stream: %s", SDL_GetError());
-
-    if (!SDL_ResumeAudioStreamDevice(result.stream))
-        LOG_ERROR("Can't resume audio stream: %s", SDL_GetError());
+    SDL_CHECK(result.stream, "Couldn't open audio device stream");
+    SDL_CHECK(SDL_GetAudioStreamFormat(result.stream, &result.srcSpec, &result.dstSpec),
+              "Couldn't format audio stream");
+    SDL_CHECK(SDL_ResumeAudioStreamDevice(result.stream), "Couldn't resume audio stream");
 
     return result;
 }
@@ -73,7 +70,7 @@ Sound NewSound(cstr path, PlaybackType type) {
     };
 
     if (!SDL_LoadWAV(path, &result.spec, &result.data, &result.len)) {
-        LOG_ERROR("Loading file %s failed: %s", "data\\test.wav", SDL_GetError());
+        LOG_ERROR("Loading file failed: %s", "data\\test.wav", SDL_GetError());
         return (Sound){0};
     }
 

@@ -467,7 +467,7 @@ void DrawInstances(u32 count) {
     glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, count);
 }
 
-void DrawElement(){
+void DrawElement() {
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
@@ -492,12 +492,6 @@ void DrawMouse() {
 bool CollisionRectRect(Rect a, Rect b) {
     return a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
 }
-
-#define LOG_GL_ERROR(msg)                                                                          \
-    do {                                                                                           \
-        u32 __err = glGetError();                                                                  \
-        if (__err != GL_NO_ERROR) LOG_ERROR(msg ": %u", __err);                                    \
-    } while (0);
 
 typedef enum { SHAPE_RECT, SHAPE_LINE, SHAPE_CIRCLE, SHAPE_HEXAGON, SHAPE_COUNT } Shapes;
 
@@ -614,7 +608,8 @@ GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
     GraphicsCtx result = {0};
 
     result.builtinShaders[SHADER_Default] = ShaderFromPath(0, 0);
-    result.builtinShaders[SHADER_Shapes] = ShaderFromPath("shaders\\rect.vert", "shaders\\rect.frag");
+    result.builtinShaders[SHADER_Shapes] =
+        ShaderFromPath("shaders\\shapes.vert", "shaders\\shapes.frag");
 
     result.builtinTextures[TEX_Mouse] = NewTexture("data\\pointer.png");
 
@@ -637,7 +632,7 @@ void UpdateGraphics(GraphicsCtx *ctx, void (*draw)()) {
         ClearScreen((v4){0.3f, 0.4f, 0.4f, 1.0f});
         draw();
         CameraEnd();
-        // if (!Settings()->disableMouse) DrawMouse();
+        if (!Settings()->disableMouse) DrawMouse();
     }
     FramebufferDraw(ctx->postprocessing);
 }

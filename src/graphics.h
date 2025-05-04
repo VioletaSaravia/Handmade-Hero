@@ -96,7 +96,7 @@ typedef enum {
     SHADER_COUNT,
 } BuiltinShaders;
 
-typedef enum { VAO_SQUARE, VAO_TEXT, VAO_COUNT } BuiltinVAOs;
+typedef enum { VAO_SQUARE, VAO_COUNT } BuiltinVAOs;
 
 typedef enum {
     TEX_Mouse,
