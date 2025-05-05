@@ -5,6 +5,8 @@ struct GameState {
     Camera  cam;
     Texture precise, preciseBold;
     Poly    poly;
+    v2      wPos;
+    bool    moving;
 };
 
 export void Setup() {
@@ -19,7 +21,6 @@ export void Init() {
     S->scene       = NewArena(Memory(), 1024);
     S->precise     = NewTexture("data\\precise3x.png");
     S->preciseBold = NewTexture("data\\precise3x_bold.png");
-    
 
     S->poly = (Poly){.count = 10, .verts = Alloc(&S->scene, 10 * sizeof(v2))};
     for (u32 i = 0; i < S->poly.count; i++) {
@@ -30,54 +31,28 @@ export void Init() {
 export void Update() {
     if (GetKey(KEY_E) >= Pressed) S->cam.rotation -= 2 * Delta();
     if (GetKey(KEY_Q) >= Pressed) S->cam.rotation += 2 * Delta();
-    if (GetKey(KEY_A) >= Pressed) S->cam.pos.x -= 4 * Delta();
-    if (GetKey(KEY_D) >= Pressed) S->cam.pos.x += 4 * Delta();
-    if (GetKey(KEY_W) >= Pressed) S->cam.pos.y += 4 * Delta();
-    if (GetKey(KEY_S) >= Pressed) S->cam.pos.y -= 4 * Delta();
+    if (GetKey(KEY_A) >= Pressed) S->cam.pos.x -= 200 * Delta();
+    if (GetKey(KEY_D) >= Pressed) S->cam.pos.x += 200 * Delta();
+    if (GetKey(KEY_W) >= Pressed) S->cam.pos.y += 200 * Delta();
+    if (GetKey(KEY_S) >= Pressed) S->cam.pos.y -= 200 * Delta();
     if (GetKey(KEY_F) >= Pressed) S->cam.zoom += 1 * Delta();
     if (GetKey(KEY_C) >= Pressed) S->cam.zoom -= 1 * Delta();
     if (GetKey(KEY_R) >= JustPressed) S->cam = (Camera){0};
-    printf("%.2f", S->cam.rotation);
+
+    S->moving = GetMouseButton(BUTTON_LEFT) >= Pressed &&
+                V2InRect(S->cam.pos, (Rect){.pos = S->wPos, .size = (v2){200, 50}});
+
+    if (S->moving) S->wPos = v2Add(S->wPos, MouseDir());
 }
 
 export void Draw() {
-    CameraBegin(S->cam);
     ClearScreen((v4){0.4, 0.2, 0.3, 1.0});
+    CameraBegin(S->cam);
 
-    for (size_t i = 0; i < 10; i++) {
-        f32 v = 0.1 + 0.1 * i;
-        if (Time() % 1000 > i * 100)
-            DrawRectangle((Rect){120 + 20 * i + sin(Time() * 0.001) * 100, 40 + 20 * i, 200, 100},
-                          0, (v4){v, v - 0.3, v, v}, 0.2, false, 20);
-    }
+    CameraEnd();
 
-    persist f32 levels[28] = {0};
-    for (u32 i = 0; i < 21; i++) {
-        if (i / 14)
-            GuiSliderH((v2){340, 55 + (i - 14) * 20}, 270, &levels[i]);
-        else
-            GuiSliderV((v2){40 + i * 20, 50}, 200, &levels[i]);
-
-        if (Time() % 400 < 10) levels[i] = SDL_randf();
-    }
-
-    persist bool toggles[10] = {0};
-    for (u32 i = 0; i < 10; i++) {
-        GuiToggle((Rect){(i % 5) * 30 + 150, 275 + (i / 5) * 30, 25, 15}, &toggles[i]);
-        GuiButton((Rect){(i % 5) * 30 + 350, 275 + (i / 5) * 30, 25, 15});
-
-        if (Time() % 300 < 10) toggles[i] = SDL_rand(2);
-    }
-
-    persist i32 counter = 0;
-    GuiCounter((v2){300, 10}, 20, &counter);
-
-    DrawRectangle((Rect){100, 10, 50, 20}, 0, WHITE, 4, false, 0);
-
-    DrawCircle((v2){370, 225}, 30, WHITE, true, 5);
-    DrawCircle((v2){410, 225}, 30, BLACK, false, 0);
-    DrawRectangle((Rect){425, 200, 50, 50}, PI * 0.25 + Time() * -0.002, WHITE, 0.15, true, 5);
-    DrawRectangle((Rect){455, 200, 50, 50}, PI * 0.25 + Time() * -0.002, BLACK, 0.5, true, 4);
-    DrawHex((v2){510, 225}, 30, PI + Time() * 0.002, WHITE, 0, true, 5);
-    DrawHex((v2){540, 225}, 30, Time() * 0.002, BLACK, 0, false, 2);
+    DrawRectangle((Rect){S->wPos.x, S->wPos.y, 180, 250}, 0, BLACK, 0.2, true, 2);
+    GuiButton((Rect){S->wPos.x, S->wPos.y, 16, 16});
+    GuiButton((Rect){S->wPos.x, S->wPos.y, 16, 16});
+    GuiButton((Rect){S->wPos.x, S->wPos.y, 16, 16});
 }

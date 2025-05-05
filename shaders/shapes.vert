@@ -14,6 +14,10 @@ uniform vec2 camPos;
 uniform float camZoom;
 uniform float camRotation;
 
+uniform vec2 pos;
+uniform vec2 size;
+uniform vec4 color;
+
 vec2 rotate(vec2 p, float angle) {
     float c = cos(angle);
     float s = sin(angle);
@@ -23,7 +27,7 @@ vec2 rotate(vec2 p, float angle) {
 void main() {
     // Apply zoom
     float camScale = pow(0.5, camZoom);
-    vec2 aPosCentered = aPos - camPos; // Shift everything relative to the camera
+    vec2 aPosCentered = aPos - camPos / res; // Shift everything relative to the camera
     vec2 aPosZoomed = aPosCentered / camScale;
 
     // Apply rotation

@@ -51,6 +51,9 @@ u64 Time() {
 v2 Mouse() {
     return Input()->mousePos;
 }
+v2 MouseDir() {
+    return v2Sub(Input()->mousePos, Input()->mousePosPrev);
+}
 
 export void EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(), void (*draw)()) {
     E->Game.Setup  = setup;

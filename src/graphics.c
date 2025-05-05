@@ -79,8 +79,7 @@ Shader ShaderFromPath(cstr vertFile, cstr fragFile) {
 
 void ShaderUse(Shader shader) {
     glUseProgram(shader.id);
-    u32 err = glGetError();
-    if (err != GL_NO_ERROR) LOG_ERROR("Error using shader: %d", err);
+    LOG_GL_ERROR("Couldn't use shader program");
 
     Graphics()->activeShader = shader.id;
     SetUniform1i("t", Time());

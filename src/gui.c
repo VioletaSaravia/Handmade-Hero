@@ -68,7 +68,5 @@ bool GuiCounter(v2 pos, f32 size, i32 *val) {
     if (leftJustPressed) *val -= 1;
     if (rightJustPressed) *val += 1;
 
-    if (leftJustPressed || rightJustPressed) printf("Counter is now: %d\n", *val);
-
     return leftJustPressed || rightJustPressed;
 }

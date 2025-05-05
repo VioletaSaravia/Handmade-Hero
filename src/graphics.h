@@ -116,6 +116,7 @@ void        UpdateGraphics(GraphicsCtx *ctx, void (*draw)());
 
 v2   GetResolution();
 v2   Mouse();
+v2   MouseDir();
 v2   MouseInWorld(Camera cam);
 void ClearScreen(v4 color);
 void DrawInstances(u32 count);

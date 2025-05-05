@@ -36,8 +36,9 @@ void UpdateInput(InputCtx *input) {
         }
     }
 
-    input->mousePrev = input->mouseCur;
-    input->mouseCur  = SDL_GetMouseState(&input->mousePos.x, &input->mousePos.y);
+    input->mousePrev    = input->mouseCur;
+    input->mousePosPrev = input->mousePos;
+    input->mouseCur     = SDL_GetMouseState(&input->mousePos.x, &input->mousePos.y);
 }
 
 BtnState GetPadButton(u32 pad, GamepadButton button) {

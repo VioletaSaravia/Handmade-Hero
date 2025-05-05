@@ -332,7 +332,7 @@ struct InputCtx {
 
     // TODO Mousewheel support
     i16                  mouseWheel;
-    v2                   mousePos;
+    v2                   mousePos, mousePosPrev;
     SDL_MouseButtonFlags mouseCur, mousePrev;
 
     // TODO Touchscreen support
