@@ -270,198 +270,6 @@ void TextureUse(Texture tex, u32 i) {
     if (err != GL_NO_ERROR) LOG_ERROR("Error binding texture: %d", err);
 }
 
-void VAOInit(VAO *vao, Arena *alloc, u32 maxInstances) {
-    glGenVertexArrays(1, &vao->id);
-    glBindVertexArray(vao->id);
-    u32 attribIdx = 0;
-
-    for (u64 i = 0; i < vao->count; i++) {
-        u32 err = BOInit(&vao->objs[i], alloc, maxInstances, &attribIdx);
-        if (err != 0) {
-            LOG_ERROR("Error initializing BO in VAO %s: %u", vao->source, err);
-            return;
-        }
-    }
-
-    glBindVertexArray(0);
-}
-
-u32 BOInit(BO *obj, Arena *alloc, u32 maxInstances, u32 *attribIdx) {
-    u32 err = 0;
-    glGenBuffers(1, &obj->id);
-    u32 target = obj->ebo ? GL_ELEMENT_ARRAY_BUFFER : GL_ARRAY_BUFFER;
-    glBindBuffer(target, obj->id);
-
-    u32 sizePerInstance = 0;
-    for (size_t i = 0; i < obj->attribCount; i++) {
-        u32 size = attribTypeSize(obj->attribs[i].type);
-        sizePerInstance += (size * obj->attribs[i].count);
-    }
-
-    // Decide how large this BO's buffer should be, if it wasn't manually set previously, based on
-    // maxInstances. TODO: What if it's not an instanced buffer AND it wasn't set manually?
-    if (alloc && maxInstances > 0 && !obj->bufSize && !obj->buf) {
-        obj->bufSize = sizePerInstance * maxInstances;
-        obj->buf     = Alloc(alloc, obj->bufSize); // TODO: Align errors?
-    }
-
-    glBufferData(target, obj->bufSize, obj->buf, (u32)obj->drawType);
-    err = glGetError();
-    if (err != GL_NO_ERROR) return err;
-
-    if (obj->ebo) return 0;
-
-    u64 offset = 0;
-    for (size_t i = 0; i < obj->attribCount; i++) {
-        Attrib attrib = obj->attribs[i];
-        u32    idx    = (*attribIdx)++;
-
-        switch (attrib.type) {
-        case ATTRIB_FLOAT:
-            glVertexAttribPointer(idx, attrib.count, GL_FLOAT, GL_FALSE, obj->stride,
-                                  (void *)offset);
-            err = glGetError();
-            if (err != GL_NO_ERROR) return err;
-            offset += attrib.count * sizeof(f32);
-            glEnableVertexAttribArray(idx);
-            err = glGetError();
-            if (err != GL_NO_ERROR) return err;
-            if (obj->perInstance) glVertexAttribDivisor(idx, 1);
-
-            break;
-
-        case ATTRIB_INT:
-            glVertexAttribIPointer(idx, attrib.count, GL_INT, obj->stride, (void *)offset);
-            err = glGetError();
-            if (err != GL_NO_ERROR) return err;
-            glEnableVertexAttribArray(idx);
-            err = glGetError();
-            if (err != GL_NO_ERROR) return err;
-            if (obj->perInstance) glVertexAttribDivisor(idx, 1);
-            break;
-
-        default: LOG_ERROR("Unsupported attribute type: %u", attrib.type); return -1;
-        }
-    }
-
-    return 0;
-}
-
-void VAOUse(VAO vao) {
-    glBindVertexArray(vao.id);
-    u32 err = glGetError();
-    if (err != GL_NO_ERROR) LOG_ERROR("Error binding VAO: %u", err);
-}
-
-void BOUpdate(BO obj) {
-    u32 target = obj.ebo ? GL_ELEMENT_ARRAY_BUFFER : GL_ARRAY_BUFFER;
-    glBindBuffer(target, obj.id);
-    // TODO: Reemplaza todo el buffer actualmente, pero podría tener offset y size
-    glBufferSubData(target, 0, obj.bufSize, obj.buf);
-}
-
-static AttribType attribTypeFromGLSL(cstr typeName) {
-    if (strcmp(typeName, "float") == 0 || strncmp(typeName, "vec", 3) == 0) {
-        return ATTRIB_FLOAT;
-    } else if (strcmp(typeName, "int") == 0 || strncmp(typeName, "ivec", 4) == 0) {
-        return ATTRIB_INT;
-    }
-    LOG_ERROR("Attrib type not found");
-    return 0;
-}
-
-static u32 attribCountFromGLSL(cstr typeName) {
-    if (strcmp(typeName, "float") == 0 || strcmp(typeName, "int") == 0) return 1;
-    if (strncmp(typeName, "vec", 3) == 0 || strncmp(typeName, "ivec", 4) == 0)
-        return (u32)(typeName[3] - '0');
-
-    return 1;
-}
-
-static u32 attribTypeSize(AttribType type) {
-    switch (type) {
-    case ATTRIB_FLOAT: return 4;
-    case ATTRIB_INT: return 4;
-    default: return 0;
-    }
-}
-
-VAO VAOFromShader(cstr path) {
-    FILE *file = fopen(path, "r");
-    if (!file) {
-        perror("Failed to open shader file");
-        exit(1);
-    }
-
-    VAO  vao     = {0};
-    u32  boIndex = 0;
-    BO  *bo      = NULL;
-    bool indexed = false;
-
-    char line[512];
-    while (fgets(line, sizeof(line), file)) {
-        if (strstr(line, "+BUFFER")) {
-            // Start new BO
-            if (boIndex >= 8) {
-                fprintf(stderr, "Too many buffers in shader\n");
-                exit(1);
-            }
-            bo  = &vao.objs[boIndex++];
-            *bo = (BO){.drawType    = strstr(line, "+DYNAMIC") != 0 ? BUF_DYNAMIC : BUF_STATIC,
-                       .ebo         = false,
-                       .perInstance = strstr(line, "+INSTANCED") != 0,
-                       .buf         = 0,
-                       .bufSize     = 0,
-                       .stride      = 0,
-                       .attribCount = 0};
-
-            if (strstr(line, "+INDEXED") != 0) indexed = true;
-            continue;
-        }
-
-        if (bo && strstr(line, "layout(") && !(strstr(line, "//layout"))) {
-            cstr typeStart = strstr(line, "in ");
-            if (!typeStart) continue;
-            typeStart += 3;
-
-            char typeName[32];
-            sscanf(typeStart, "%31s", typeName);
-
-            Attrib attrib;
-            attrib.type  = attribTypeFromGLSL(typeName);
-            attrib.count = attribCountFromGLSL(typeName);
-
-            if (bo->attribCount >= 4) {
-                fprintf(stderr, "Too many attributes in buffer\n");
-                exit(1);
-            }
-
-            bo->attribs[bo->attribCount++] = attrib;
-            bo->stride += attrib.count * attribTypeSize(attrib.type);
-        }
-    }
-
-    fclose(file);
-
-    // NOTE(viole): If any of the buffers where tagged +INDEXED, we add an EBO.
-    // Only one though! Would two ever be necessary? Also, should this be attached
-    // to the shader or the mesh loading?
-    if (indexed && vao.count < 8 && boIndex > 0) {
-        BO *ebo = &vao.objs[boIndex++];
-        *ebo    = (BO){.drawType    = BUF_STATIC,
-                       .ebo         = true,
-                       .perInstance = false,
-                       .buf         = 0,
-                       .bufSize     = 0,
-                       .stride      = 0,
-                       .attribCount = 0};
-    }
-
-    vao.count  = boIndex;
-    vao.source = path;
-    return vao;
-}
-
 void DrawInstances(u32 count) {
     glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, count);
 }
@@ -475,35 +283,18 @@ void ClearScreen(v4 color) {
     glClear(GL_COLOR_BUFFER_BIT);
 }
 
-void DrawMouse() {
-    ShaderUse(Graphics()->builtinShaders[SHADER_Default]);
-    SetUniform2f("res", GetResolution());
-    SetUniform2f("pos", Mouse());
-    SetUniform1f("scale", 1);
-    Texture mouseTex = Graphics()->builtinTextures[TEX_Mouse];
-    SetUniform2f("size", (v2){mouseTex.size.x, mouseTex.size.y});
-    SetUniform4f("color", WHITE);
-    TextureUse(mouseTex, 0);
-    VAOUse(Graphics()->builtinVAOs[VAO_SQUARE]);
-    DrawInstances(1);
-}
-
 bool CollisionRectRect(Rect a, Rect b) {
     return a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
 }
 
 typedef enum { SHAPE_RECT, SHAPE_LINE, SHAPE_CIRCLE, SHAPE_HEXAGON, SHAPE_COUNT } Shapes;
 
-void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding, bool line, f32 thickness) {
-    ShaderUse(Graphics()->builtinShaders[SHADER_Shapes]);
+void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding) {
+    ShaderUse(Graphics()->builtinShaders[SHADER_Rect]);
     SetUniform2f("pos", v2Add(rect.pos, v2Scale(rect.size, 0.5)));
     SetUniform2f("size", rect.size);
     SetUniform1f("rotation", rotation);
 
-    SetUniform1i("shape", SHAPE_RECT);
-    SetUniform1b("line", line);
-    SetUniform1f("thickness", thickness);
-    SetUniform1f("rounding", rounding);
     SetUniform4f("color", color);
 
     glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
@@ -516,7 +307,7 @@ void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding, bool line, f
 }
 
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness) {
-    ShaderUse(Graphics()->builtinShaders[SHADER_Shapes]);
+    ShaderUse(Graphics()->builtinShaders[SHADER_Line]);
     SetUniform2f("pos", from);
     v2 size = v2Sub(to, from);
     // TODO Horrible.
@@ -537,33 +328,10 @@ void DrawLine(v2 from, v2 to, v4 color, f32 thickness) {
     glBindVertexArray(0);
 }
 
-void DrawHex(v2 center, f32 radius, f32 rotation, v4 color, f32 rounding, bool line,
-             f32 thickness) {
-    Rect rect = {.x = center.x, .y = center.y, .w = radius * 2, .h = radius * 2};
-    ShaderUse(Graphics()->builtinShaders[SHADER_Shapes]);
-    SetUniform2f("pos", rect.pos);
-    SetUniform2f("size", rect.size);
-    SetUniform1f("rotation", rotation);
-
-    SetUniform1i("shape", SHAPE_HEXAGON);
-    SetUniform1b("line", line);
-    SetUniform1f("thickness", thickness);
-    SetUniform1f("rounding", rounding);
-    SetUniform4f("color", color);
-
-    glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
-    LOG_GL_ERROR("VAO binding failed");
-    {
-        DrawElement();
-        LOG_GL_ERROR("Drawing failed");
-    }
-    glBindVertexArray(0);
-}
-
 void DrawCircle(v2 center, f32 radius, v4 color, bool line, f32 thickness) {
     Rect rect = {.x = center.x, .y = center.y, .w = radius * 2, .h = radius * 2};
 
-    ShaderUse(Graphics()->builtinShaders[SHADER_Shapes]);
+    ShaderUse(Graphics()->builtinShaders[SHADER_Circle]);
     SetUniform2f("pos", rect.pos);
     SetUniform2f("size", rect.size);
     SetUniform1f("rotation", 0);
@@ -589,32 +357,54 @@ void DrawPoly(Poly poly, v4 color, f32 thickness) {
     }
 }
 
-global f32 sqVerts[] = {1, 1, 0, 1, 0, 1, -1, 0, 1, 1, -1, -1, 1, 0, 1, -1, 1, 0, 0, 0};
-global u32 sqIds[]   = {0, 1, 3, 1, 2, 3};
+global f32 sqVerts[] = {
+    -0.5f, -0.5f, // bottom left
+    0.5f,  -0.5f, // bottom right
+    0.5f,  0.5f,  // top right
+    -0.5f, 0.5f   // top left
+};
+global u32 sqIds[] = {
+    0, 1, 2, // first triangle
+    2, 3, 0  // second triangle
+};
 
-void VAOLoadMesh(VAO *vao, f32 *verts, u32 vertSize, u32 *ids, u32 idSize) {
-    vao->objs[0].buf     = verts;
-    vao->objs[0].bufSize = vertSize;
+VAO LoadMesh() {
+    VAO result = {0};
 
-    for (u32 i = 0; i < vao->count; i++) {
-        if (!vao->objs[i].ebo) continue;
-        vao->objs[i].buf     = ids;
-        vao->objs[i].bufSize = idSize;
+    glGenVertexArrays(1, &result.id);
+    u32 vbo = 0, ebo = 0;
+    glGenBuffers(1, &vbo);
+    glGenBuffers(1, &ebo);
+
+    glBindVertexArray(result.id);
+    {
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(sqVerts), sqVerts, GL_STATIC_DRAW);
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(sqIds), sqIds, GL_STATIC_DRAW);
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(f32), (void *)0);
     }
+    glBindVertexArray(0);
+
+    return result;
 }
 
 GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
     GraphicsCtx result = {0};
 
     result.builtinShaders[SHADER_Default] = ShaderFromPath(0, 0);
-    result.builtinShaders[SHADER_Shapes] =
-        ShaderFromPath("shaders\\shapes.vert", "shaders\\shapes.frag");
+    result.builtinShaders[SHADER_Rect] =
+        ShaderFromPath("shaders\\default2d.vert", "shaders\\rect.frag");
+    result.builtinShaders[SHADER_Line] =
+        ShaderFromPath("shaders\\default2d.vert", "shaders\\line.frag");
+    result.builtinShaders[SHADER_Circle] =
+        ShaderFromPath("shaders\\default2d.vert", "shaders\\circle.frag");
 
-    result.builtinTextures[TEX_Mouse] = NewTexture("data\\pointer.png");
-
-    result.builtinVAOs[VAO_SQUARE] = VAOFromShader("shaders\\default.vert");
-    VAOLoadMesh(&result.builtinVAOs[VAO_SQUARE], sqVerts, sizeof(sqVerts), sqIds, sizeof(sqIds));
-    VAOInit(&result.builtinVAOs[VAO_SQUARE], 0, 0);
+    result.builtinVAOs[VAO_CUBE]   = LoadMesh();
+    result.builtinVAOs[VAO_SQUARE] = LoadMesh();
 
     result.postprocessing = NewFramebuffer("shaders\\post.frag");
 
@@ -631,7 +421,6 @@ void UpdateGraphics(GraphicsCtx *ctx, void (*draw)()) {
         ClearScreen((v4){0.3f, 0.4f, 0.4f, 1.0f});
         draw();
         CameraEnd();
-        if (!Settings()->disableMouse) DrawMouse();
     }
     FramebufferDraw(ctx->postprocessing);
 }

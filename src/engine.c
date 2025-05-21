@@ -1,10 +1,10 @@
 #include "engine.h"
 
-#include "audio.h"
-#include "common.h"
-#include "graphics.h"
-#include "gui.h"
-#include "input.h"
+#include "audio.c"
+#include "common.c"
+#include "graphics.c"
+#include "gui.c"
+#include "input.c"
 
 struct EngineCtx {
     Arena        Memory;
@@ -77,16 +77,16 @@ export void EngineInit() {
 }
 
 export void EngineUpdate() {
-    UpdateInput(Input());
-    UpdateTiming(Timing());
+    UpdateInput(&E->Input);
+    UpdateTiming(&E->Timing);
 
     E->Game.Update();
 
-    UpdateGraphics(Graphics(), E->Game.Draw);
-    UpdateWindow(Window());
+    UpdateGraphics(&E->Graphics, E->Game.Draw);
+    UpdateWindow(&E->Window);
 }
 
-extern void EngineReloadMemory(void *memory) {
+export void EngineReloadMemory(void *memory) {
     E = memory;
     S = (GameState *)((u8 *)memory + sizeof(EngineCtx));
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress)) {
@@ -116,22 +116,28 @@ export bool EngineIsRunning() {
 WindowCtx InitWindow(const GameSettings *settings) {
     WindowCtx buffer = {0};
 
-    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
+    SDL_FATAL(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO | SDL_INIT_EVENTS),
+              "Failed to initialize SDL");
     SDL_SetAppMetadata(settings->name, settings->version, "com.violeta.game");
     SDL_SetAppMetadataProperty("SDL_PROP_APP_METADATA_CREATOR_STRING", "Violeta Saravia");
 
     buffer.window = SDL_CreateWindow(settings->name, settings->resolution.w, settings->resolution.h,
-                                     SDL_WINDOW_OPENGL);
-    SDL_SetWindowPosition(buffer.window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-    if (E->Settings.fullscreen) SDL_SetWindowFullscreen(buffer.window, true);
-    SDL_SetWindowIcon(buffer.window, IMG_Load("data\\icon.ico"));
-
-    // SDL_HideCursor();
+                                     SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+    SDL_FATAL(buffer.window, "Failed to create window");
+    SDL_FATAL(SDL_SetWindowPosition(buffer.window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED),
+              "Failed to set window position");
+    // SDL_FATAL(SDL_SetWindowFullscreen(buffer.window, true), "Failed to fullscreen window");
+    SDL_FATAL(SDL_SetWindowIcon(buffer.window, IMG_Load("data\\icon.ico")),
+              "Failed to set window icon");
 
     buffer.glCtx = SDL_GL_CreateContext(buffer.window);
-    if (!SDL_GL_MakeCurrent(buffer.window, buffer.glCtx))
-        LOG_FATAL("Failed to show window: %s", SDL_GetError())
-    // SDL_GL_SetSwapInterval(1); // Enable vsync
+    SDL_FATAL(buffer.glCtx, "Failed to create context");
+
+    SDL_FATAL(SDL_GL_MakeCurrent(buffer.window, buffer.glCtx), "Failed to show window")
+    // SDL_FATAL(SDL_GL_SetSwapInterval(1), "Failed to enable vsync");
+
+    SDL_Surface *cursor = IMG_Load("data\\pointer.png");
+    SDL_FATAL(SDL_SetCursor(SDL_CreateColorCursor(cursor, 0, 0)), "Failed to set cursor");
 
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress)) LOG_FATAL("Glad failed to load GL")
 
@@ -147,9 +153,13 @@ WindowCtx InitWindow(const GameSettings *settings) {
 void UpdateWindow(WindowCtx *ctx) {
     SDL_GL_SwapWindow(ctx->window);
     if (GetKey(KEY_F11) == JustPressed) {
-        if (SDL_SetWindowFullscreen(ctx->window, !ctx->fullscreen))
+        if (SDL_SetWindowFullscreen(ctx->window, !ctx->fullscreen)) {
             ctx->fullscreen ^= true;
-        else
+            i32 w, h;
+            SDL_GetWindowSize(ctx->window, &w, &h);
+            SDL_SetWindowSize(ctx->window, w, h);
+            glViewport(0, 0, w, h);
+        } else
             LOG_ERROR("Couldn't fullscreen window: %s", SDL_GetError());
     }
 }
@@ -169,17 +179,21 @@ void UpdateTiming(TimingCtx *ctx) {
     ctx->time  = SDL_GetTicks();
     ctx->delta = GetSecondsElapsed(ctx->perfFreq, ctx->last, SDL_GetPerformanceCounter());
 
-    // if (ctx->targetSpf > 0)
-    //     while (ctx->delta < ctx->targetSpf) {
-    //         SDL_DelayPrecise(100 * (ctx->targetSpf - ctx->delta));
-    //         ctx->delta = GetSecondsElapsed(SDL_GetPerformanceFrequency(), ctx->last,
-    //                                        SDL_GetPerformanceCounter());
-    //     }
+    if (ctx->targetSpf > 0)
+        while (ctx->delta < ctx->targetSpf) {
+            SDL_DelayPrecise(100 * (ctx->targetSpf - ctx->delta));
+            ctx->delta = GetSecondsElapsed(SDL_GetPerformanceFrequency(), ctx->last,
+                                           SDL_GetPerformanceCounter());
+        }
 
     f32 msPerFrame = ctx->delta * 1000.0f;
     f32 msBehind   = (ctx->delta - ctx->targetSpf) * 1000.0f;
     f64 fps        = (f64)(ctx->perfFreq) / (f64)(SDL_GetPerformanceCounter() - ctx->last);
-    LOG_INFO("FPS: %.2f MsPF: %.2f Ms behind: %.4f", fps, msPerFrame, msBehind);
+    // LOG_INFO("FPS: %.2f MsPF: %.2f Ms behind: %.4f", fps, msPerFrame, msBehind);
+    cstr fpsTitle = (cstr)malloc(20);
+    sprintf(fpsTitle, "FPS: %.2f", fps);
+    SDL_SetWindowTitle(Window()->window, fpsTitle);
+    free(fpsTitle);
 
     ctx->last = ctx->now;
     ctx->now  = SDL_GetPerformanceCounter();

@@ -1,5 +1,12 @@
 {
     "files.associations": {
         "*.h": "c",
-    }
+    },
+    "c-cpp-flylint.cppcheck.enable": false,
+    "c-cpp-flylint.cppcheck.standard": ["c11"],
+    "c-cpp-flylint.flawfinder.enable": false,
+    "c-cpp-flylint.clang.enable": false,
+    "c-cpp-flylint.lizard.enable": false,
+    "c-cpp-flylint.flexelint.enable": false,
+    "c-cpp-flylint.run": "onSave"
 }

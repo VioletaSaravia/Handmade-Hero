@@ -31,47 +31,6 @@ void   SetUniform3f(cstr name, v3 value);
 void   SetUniform4f(cstr name, v4 value);
 void   SetUniform1b(cstr name, bool value);
 
-typedef enum {
-    ATTRIB_FLOAT = GL_FLOAT,
-    ATTRIB_INT   = GL_INT,
-} AttribType;
-
-typedef struct {
-    AttribType type;
-    u32        count;
-} Attrib;
-
-typedef enum {
-    BUF_STATIC  = GL_STATIC_DRAW,
-    BUF_DYNAMIC = GL_DYNAMIC_DRAW,
-} DrawType;
-
-typedef enum { TYPE_VBO, TYPE_EBO, TYPE_FBO, TYPE_RBO } BOType;
-
-typedef struct {
-    u32      id;
-    DrawType drawType;
-    bool     ebo;
-    bool     perInstance;
-    void    *buf;     // Set by BOInit()
-    u32      bufSize; // Set by BoInit()
-    u32      stride;
-    Attrib   attribs[4];
-    u32      attribCount;
-} BO;
-u32  BOInit(BO *obj, Arena *alloc, u32 maxInstances, u32 *attribIdx);
-void BOUpdate(BO obj);
-
-typedef struct {
-    cstr source;
-    u32  id;
-    BO   objs[8];
-    u32  count;
-} VAO;
-VAO  VAOFromShader(cstr path);
-void VAOInit(VAO *vao, Arena *alloc, u32 maxInstances);
-void VAOUse(VAO vao);
-
 typedef struct {
     u32    fbo, tex, rbo, vao;
     Shader shader;
@@ -92,27 +51,33 @@ void    TextureUse(Texture tex, u32 i);
 
 typedef enum {
     SHADER_Default,
-    SHADER_Shapes,
+    SHADER_Rect,
+    SHADER_Line,
+    SHADER_Circle,
     SHADER_COUNT,
 } BuiltinShaders;
 
-typedef enum { VAO_SQUARE, VAO_COUNT } BuiltinVAOs;
+typedef enum { VAO_CUBE, VAO_SQUARE, VAO_COUNT } BuiltinVAOs;
+
+typedef struct {
+    u32 id;
+} VAO;
 
 typedef enum {
-    TEX_Mouse,
+    TEX_NONE,
     TEX_COUNT,
 } BuiltinTextures;
 
 struct GraphicsCtx {
     Camera      cam;
     u32         activeShader;
-    VAO         builtinVAOs[VAO_COUNT];
-    Texture     builtinTextures[TEX_COUNT];
     Shader      builtinShaders[SHADER_COUNT];
+    Texture     builtinTextures[TEX_COUNT];
+    VAO         builtinVAOs[VAO_COUNT];
     Framebuffer postprocessing;
 };
-GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings);
-void        UpdateGraphics(GraphicsCtx *ctx, void (*draw)());
+intern GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings);
+intern void        UpdateGraphics(GraphicsCtx *ctx, void (*draw)());
 
 v2   GetResolution();
 v2   Mouse();
@@ -121,10 +86,9 @@ v2   MouseInWorld(Camera cam);
 void ClearScreen(v4 color);
 void DrawInstances(u32 count);
 void DrawElement();
-void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding, bool line, f32 thickness);
+void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding);
 void DrawLine(v2 from, v2 to, v4 color, f32 thickness);
 void DrawCircle(v2 center, f32 radius, v4 color, bool line, f32 thickness);
-void DrawHex(v2 center, f32 radius, f32 rotation, v4 color, f32 rounding, bool line, f32 thickness);
 void DrawPoly(Poly poly, v4 color, f32 thickness);
 
 #define WHITE (v4){1, 1, 1, 1}

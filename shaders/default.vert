@@ -2,9 +2,9 @@
 
 // +BUFFER +INDEXED
 layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec2 aTexCoord;
+layout(location = 1) in vec2 aUV;
 
-out vec2 texCoord;
+out vec2 vUV;
 
 // Globals
 uniform int t;
@@ -24,7 +24,7 @@ void main() {
     vec2 pos_n = (pos - camPos) / res;
     vec2 size_n = (camZoom + 1) * size / res;
 
-    texCoord = aTexCoord;
+    vUV = aUV;
 
     gl_Position = vec4(
             aPos.x * size_n.x + pos_n.x * 2 - 1 + size_n.x,

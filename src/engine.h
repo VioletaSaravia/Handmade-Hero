@@ -20,7 +20,7 @@ typedef struct WindowCtx {
 } WindowCtx;
 WindowCtx       *Window();
 intern WindowCtx InitWindow(const GameSettings *settings);
-void             UpdateWindow(WindowCtx *ctx);
+intern void      UpdateWindow(WindowCtx *ctx);
 
 typedef struct GraphicsCtx GraphicsCtx;
 GraphicsCtx               *Graphics();
@@ -30,12 +30,13 @@ typedef struct {
     u64 time, now, last, perfFreq;
 } TimingCtx;
 intern TimingCtx InitTiming(f32 refreshRate);
-void             UpdateTiming(TimingCtx *ctx);
-f32              Delta();
-u64              Time();
+intern void      UpdateTiming(TimingCtx *ctx);
 inline f32       GetSecondsElapsed(u64 perfCountFreq, u64 start, u64 end) {
     return (f32)(end - start) / (f32)(perfCountFreq);
 }
+
+f32 Delta();
+u64 Time();
 
 typedef struct EngineCtx EngineCtx;
 typedef struct GameState GameState;
@@ -47,7 +48,6 @@ typedef struct {
     void (*Draw)();
 } GameCode;
 
-// TODO Windows specific export keyword
 export void  EngineLoadGame(void (*setup)(), void (*init)(), void (*update)(), void (*draw)());
 export void  EngineReloadMemory(void *memory);
 export void  EngineInit();

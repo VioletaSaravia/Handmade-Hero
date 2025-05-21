@@ -8,7 +8,7 @@
 typedef struct GameApi {
     HMODULE  lib;
     uint64_t writeTime;
-    int32_t  version;
+    int32_t version;
 
     void (*Setup)();
     void (*Init)();
@@ -38,7 +38,10 @@ GameApi LoadApi(void *memory, int32_t version) {
     }
 
     HMODULE lib = LoadLibraryA(dllBuf);
-    if (!lib) return (GameApi){0};
+    if (!lib) {
+        printf("[Fatal] [%s] LoadLibraryA failed: %d\n", __func__, GetLastError());
+        return (GameApi){0};
+    }
 
 #pragma warning(push)
 #pragma warning(disable : 4113)
@@ -88,10 +91,7 @@ void ReloadApi(GameApi *api) {
 int32_t main() {
     GameApi api =
         LoadApi(VirtualAlloc(0, 128 * 1'000'000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE), 0);
-    if (!api.lib) {
-        printf("[Fatal] [Debug] Couldn't load dll\n");
-        return;
-    }
+    if (!api.lib) return 1;
 
     api.EngineInit();
     while (api.EngineIsRunning()) {

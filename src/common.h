@@ -363,7 +363,7 @@ inline void Log(LogLevel level, cstr ctx, cstr msg, ...) {
     } while (0);
 #define SDL_CHECK(func, msg, ...)                                                                  \
     do {                                                                                           \
-        if (!func) LOG_ERROR(msg ": %s", SDL_GetError());                           \
+        if (!func) LOG_ERROR(msg ": %s", SDL_GetError());                                          \
     } while (0);
 #else
 #define LOG_ERROR(msg)
@@ -375,8 +375,13 @@ inline void Log(LogLevel level, cstr ctx, cstr msg, ...) {
 #define LOG_FATAL(msg, ...)                                                                        \
     {                                                                                              \
         Log(LEVEL_FATAL, __func__, msg, ##__VA_ARGS__);                                            \
-        abort();                                                                                   \
+        exit(1);                                                                                   \
     };
+#define SDL_FATAL(func, msg, ...)                                                                  \
+    do {                                                                                           \
+        if (!func) LOG_FATAL(msg ": %s", SDL_GetError());                                          \
+    } while (0);
 #else
 #define LOG_FATAL(msg)
+#define SDL_FATAL(func, msg) (func)
 #endif

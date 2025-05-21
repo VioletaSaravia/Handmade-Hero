@@ -20,19 +20,12 @@ v2 CollisionNormal(Rect rectA, Rect rectB) {
 
     v2 normal = {0, 0};
 
-    if (px < py) {
+    if (px < py)
         // Collision is horizontal
-        if (dx > 0)
-            normal.x = 1; // From left
-        else
-            normal.x = -1; // From right
-    } else {
+        normal.x = dx > 0 ? 1 : -1;
+    else
         // Collision is vertical
-        if (dy > 0)
-            normal.y = 1; // From top
-        else
-            normal.y = -1; // From bottom
-    }
+        normal.y = dy > 0 ? 1 : -1;
 
     return normal;
 }
