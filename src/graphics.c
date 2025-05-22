@@ -37,7 +37,7 @@ Shader ShaderFromPath(cstr vertFile, cstr fragFile) {
     string vertSrc = ReadEntireFile(vertFile);
     string fragSrc = ReadEntireFile(fragFile);
 
-    // TODO(violeta): Esto es sólo para evitar errores al hacer reload.
+    // TODO(viole): Esto es sólo para evitar errores al hacer reload.
     // Cambiar por algo mejor.
     while (!vertSrc.data) vertSrc = ReadEntireFile(vertFile);
     while (!fragSrc.data) fragSrc = ReadEntireFile(fragFile);
@@ -48,7 +48,7 @@ Shader ShaderFromPath(cstr vertFile, cstr fragFile) {
 
     glGetShaderiv(vertShader, GL_COMPILE_STATUS, &ok);
     if (!ok) {
-        ShaderPrintError(vertShader);
+        ShaderPrintError(vertShader, vertFile);
         return (Shader){0};
     }
 
@@ -57,7 +57,7 @@ Shader ShaderFromPath(cstr vertFile, cstr fragFile) {
     glCompileShader(fragShader);
     glGetShaderiv(fragShader, GL_COMPILE_STATUS, &ok);
     if (!ok) {
-        ShaderPrintError(fragShader);
+        ShaderPrintError(fragShader, fragFile);
         return (Shader){0};
     }
 
@@ -68,7 +68,7 @@ Shader ShaderFromPath(cstr vertFile, cstr fragFile) {
     glGetProgramiv(result.id, GL_LINK_STATUS, &ok);
     if (!ok) {
         ShaderPrintProgramError(result.id);
-        return (Shader){0};
+        exit(-1);
     }
 
     glDeleteShader(vertShader);
@@ -140,14 +140,14 @@ void SetUniform1b(cstr name, bool value) {
     SetUniform1i(name, (value ? 1 : 0));
 }
 
-void ShaderPrintError(u32 shader) {
+void ShaderPrintError(u32 shader, char *shaderPath) {
     i32 logLength = 0;
     glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
 
     char *infoLog = malloc(logLength);
     glGetShaderInfoLog(shader, logLength, 0, infoLog);
 
-    LOG_ERROR(infoLog);
+    LOG_ERROR("%s - %s", shaderPath, infoLog);
 
     free(infoLog);
 }
@@ -289,11 +289,13 @@ bool CollisionRectRect(Rect a, Rect b) {
 
 typedef enum { SHAPE_RECT, SHAPE_LINE, SHAPE_CIRCLE, SHAPE_HEXAGON, SHAPE_COUNT } Shapes;
 
-void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding) {
+void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 radius) {
     ShaderUse(Graphics()->builtinShaders[SHADER_Rect]);
     SetUniform2f("pos", v2Add(rect.pos, v2Scale(rect.size, 0.5)));
     SetUniform2f("size", rect.size);
     SetUniform1f("rotation", rotation);
+    SetUniform1f("radius", radius);
+    SetUniform1f("border", 5);
 
     SetUniform4f("color", color);
 
@@ -306,23 +308,19 @@ void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 rounding) {
     glBindVertexArray(0);
 }
 
-void DrawLine(v2 from, v2 to, v4 color, f32 thickness) {
-    ShaderUse(Graphics()->builtinShaders[SHADER_Line]);
+void DrawLine(v2 from, v2 to, v4 color) {
+    ShaderUse(Graphics()->builtinShaders[SHADER_Default]);
+    f32 swapY = from.y;
+    from.y    = to.y;
+    to.y      = swapY;
     SetUniform2f("pos", from);
-    v2 size = v2Sub(to, from);
-    // TODO Horrible.
-    size = (v2){size.x == 0 ? 1 : size.x, size.y == 0 ? 1 : size.y};
-    SetUniform2f("size", size);
-    SetUniform1f("rotation", 0);
-
-    SetUniform1i("shape", SHAPE_LINE);
-    SetUniform1f("thickness", thickness);
+    SetUniform2f("size", v2Sub(to, from));
     SetUniform4f("color", color);
 
-    glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
+    glBindVertexArray(Graphics()->builtinVAOs[VAO_LINE].id);
     LOG_GL_ERROR("VAO binding failed");
     {
-        DrawElement();
+        glDrawArrays(GL_LINES, 0, 2);
         LOG_GL_ERROR("Drawing failed");
     }
     glBindVertexArray(0);
@@ -339,7 +337,7 @@ void DrawCircle(v2 center, f32 radius, v4 color, bool line, f32 thickness) {
     SetUniform1i("shape", SHAPE_CIRCLE);
     SetUniform1b("line", line);
     SetUniform1f("thickness", thickness);
-    SetUniform1f("rounding", 0);
+    SetUniform1f("radius", 0);
     SetUniform4f("color", color);
 
     glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
@@ -351,24 +349,25 @@ void DrawCircle(v2 center, f32 radius, v4 color, bool line, f32 thickness) {
     glBindVertexArray(0);
 }
 
-void DrawPoly(Poly poly, v4 color, f32 thickness) {
+void DrawPoly(Poly poly, v4 color) {
     for (u32 i = 0; i < poly.count - 1; i++) {
-        DrawLine(poly.verts[i], poly.verts[i + 1], color, thickness);
+        DrawLine(poly.verts[i], poly.verts[i + 1], color);
     }
 }
 
-global f32 sqVerts[] = {
-    -0.5f, -0.5f, // bottom left
-    0.5f,  -0.5f, // bottom right
-    0.5f,  0.5f,  // top right
-    -0.5f, 0.5f   // top left
-};
-global u32 sqIds[] = {
-    0, 1, 2, // first triangle
-    2, 3, 0  // second triangle
-};
+VAO LoadSquareMesh() {
+    persist f32 sqVerts[] = {
+        //  x     y     u     v
+        -0.5f, -0.5f, 0.0f, 0.0f, // bottom left
+        0.5f,  -0.5f, 1.0f, 0.0f, // bottom right
+        0.5f,  0.5f,  1.0f, 1.0f, // top right
+        -0.5f, 0.5f,  0.0f, 1.0f  // top left
+    };
+    persist u32 sqIds[] = {
+        0, 1, 2, // first triangle
+        2, 3, 0  // second triangle
+    };
 
-VAO LoadMesh() {
     VAO result = {0};
 
     glGenVertexArrays(1, &result.id);
@@ -384,10 +383,33 @@ VAO LoadMesh() {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(sqIds), sqIds, GL_STATIC_DRAW);
 
+        // Position attribute (location = 0)
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(f32), (void *)0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), (void *)(0));
+
+        // UV attribute (location = 1)
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(f32), (void *)(2 * sizeof(f32)));
     }
     glBindVertexArray(0);
+
+    return result;
+}
+
+VAO LoadLineMesh() {
+    persist float lineVertices[] = {-1, -1, 1, 1};
+
+    VAO result = {0};
+    u32 vbo    = 0;
+    glGenVertexArrays(1, &result.id);
+    glGenBuffers(1, &vbo);
+
+    glBindVertexArray(result.id);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(lineVertices), lineVertices, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
 
     return result;
 }
@@ -398,13 +420,14 @@ GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
     result.builtinShaders[SHADER_Default] = ShaderFromPath(0, 0);
     result.builtinShaders[SHADER_Rect] =
         ShaderFromPath("shaders\\default2d.vert", "shaders\\rect.frag");
-    result.builtinShaders[SHADER_Line] =
-        ShaderFromPath("shaders\\default2d.vert", "shaders\\line.frag");
     result.builtinShaders[SHADER_Circle] =
         ShaderFromPath("shaders\\default2d.vert", "shaders\\circle.frag");
+    result.builtinShaders[SHADER_Sdf] =
+        ShaderFromPath("shaders\\shapes.vert", "shaders\\shapes.frag");
 
-    result.builtinVAOs[VAO_CUBE]   = LoadMesh();
-    result.builtinVAOs[VAO_SQUARE] = LoadMesh();
+    result.builtinVAOs[VAO_CUBE]   = LoadSquareMesh();
+    result.builtinVAOs[VAO_SQUARE] = LoadSquareMesh();
+    result.builtinVAOs[VAO_LINE]   = LoadLineMesh();
 
     result.postprocessing = NewFramebuffer("shaders\\post.frag");
 

@@ -345,12 +345,4 @@ BtnState GetPadButton(u32 pad, GamepadButton button);
 BtnState GetKey(KeyboardKey code);
 BtnState GetMouseButton(MouseButton button);
 
-typedef enum {
-    ACTION_UP,
-    ACTION_DOWN,
-    ACTION_LEFT,
-    ACTION_RIGHT,
-    ACTION_ACCEPT,
-    ACTION_CANCEL,
-    ACTION_COUNT,
-} Action;
+typedef enum Action Action;

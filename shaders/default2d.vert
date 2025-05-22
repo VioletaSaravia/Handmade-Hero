@@ -35,11 +35,12 @@ void main() {
     vec2 world = pos + local;
 
     // Camera transform
-    vec2 view = (world - camPos) * (camZoom + 1);
+    vec2 view = (world - camPos) * (pow(2, camZoom));
     view = rotate(-camRotation) * view;
 
     // Normalize to [-1, 1] (NDC)
-    vec2 ndc = world / res * 2.0;
+    vec2 ndc = world / res * 2.0 - 1.0;
+    ndc.y = -ndc.y;
 
     gl_Position = vec4(ndc, 0.0, 1.0);
 }
