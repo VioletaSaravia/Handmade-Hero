@@ -270,6 +270,13 @@ void TextureUse(Texture tex, u32 i) {
     if (err != GL_NO_ERROR) LOG_ERROR("Error binding texture: %d", err);
 }
 
+void TextureEnd(u32 i) {
+    glActiveTexture(GL_TEXTURE0 + i); // Same unit used before
+    glBindTexture(GL_TEXTURE_2D, 0);
+    u32 err = glGetError();
+    if (err != GL_NO_ERROR) LOG_ERROR("Error binding texture: %d", err);
+}
+
 void DrawInstances(u32 count) {
     glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, count);
 }
@@ -295,8 +302,9 @@ void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 radius) {
     SetUniform2f("size", rect.size);
     SetUniform1f("rotation", rotation);
     SetUniform1f("radius", radius);
-    SetUniform1f("border", 5);
+    SetUniform1f("border", 100);
 
+    SetUniform1i("tex0", 0);
     SetUniform4f("color", color);
 
     glBindVertexArray(Graphics()->builtinVAOs[VAO_SQUARE].id);
@@ -306,6 +314,12 @@ void DrawRectangle(Rect rect, f32 rotation, v4 color, f32 radius) {
         LOG_GL_ERROR("Drawing failed");
     }
     glBindVertexArray(0);
+}
+
+void DrawTexture(Texture tex, v2 pos, f32 rotation) {
+    TextureUse(tex, 0);
+    DrawRectangle((Rect){pos.x, pos.y, tex.size.w, tex.size.h}, rotation, COLOR_NULL, 0);
+    TextureEnd(0);
 }
 
 void DrawLine(v2 from, v2 to, v4 color) {
@@ -431,6 +445,8 @@ GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
 
     result.postprocessing = NewFramebuffer("shaders\\post.frag");
 
+    SDL_CHECK(TTF_Init(), "Failed to initialize SDL_TTF");
+
     return result;
 }
 
@@ -446,4 +462,41 @@ void UpdateGraphics(GraphicsCtx *ctx, void (*draw)()) {
         CameraEnd();
     }
     FramebufferDraw(ctx->postprocessing);
+}
+
+typedef struct {
+    u64       length;
+    i32       wrap;
+    TTF_Font *font;
+    Texture   tex;
+} Text;
+
+Text NewText(cstr text, cstr fontPath, f32 size, i32 wrapChars) {
+    Text result = {.length = 0,
+                   .wrap   = wrapChars * size,
+                   .font   = TTF_OpenFont(fontPath, size),
+                   .tex    = (Texture){0}};
+    SDL_CHECK(result.font, "Failed to open font");
+
+    SDL_Surface *rendered = TTF_RenderText_Blended_Wrapped( // TODO Remove allocation
+        result.font, text, result.length, (SDL_Color){255, 255, 255, 255}, result.wrap);
+    SDL_CHECK(rendered, "Failed to render text");
+    rendered = SDL_ConvertSurface(
+        rendered, SDL_PIXELFORMAT_ABGR8888); // TODO Leaks memory from the first rendered
+    SDL_CHECK(rendered, "Failed to convert surface format");
+
+    glGenTextures(1, &result.tex.id);
+    glBindTexture(GL_TEXTURE_2D, result.tex.id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rendered->w, rendered->h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 rendered->pixels);
+    result.tex.size = (v2i){rendered->w, rendered->h};
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    SDL_DestroySurface(rendered);
+    return result;
+}
+
+void DrawText(Text text, v2 pos) {
+    DrawTexture(text.tex, pos, 0);
 }

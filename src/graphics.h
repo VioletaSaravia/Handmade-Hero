@@ -91,6 +91,7 @@ void DrawLine(v2 from, v2 to, v4 color);
 void DrawCircle(v2 center, f32 radius, v4 color, bool line, f32 thickness);
 void DrawPoly(Poly poly, v4 color);
 
+#define COLOR_NULL (v4){0, 0, 0, 0}
 #define WHITE (v4){1, 1, 1, 1}
 #define BLACK (v4){0, 0, 0, 1}
 #define RED (v4){1, 0, 0, 1}

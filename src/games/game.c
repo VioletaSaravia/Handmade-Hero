@@ -5,6 +5,7 @@ struct GameState {
     Camera cam;
     bool   holding;
     v2     pos;
+    Text   text;
 };
 
 enum Action {
@@ -29,22 +30,12 @@ export void Setup() {
     };
 }
 
-export void Init() {}
-
-export void Update() {
-    if (GetMouseButton(BUTTON_LEFT) == JustPressed &&
-        V2InRect(Mouse(), (Rect){S->pos, (v2){200, 300}}))
-        S->holding = true;
-    if (GetMouseButton(BUTTON_LEFT) == JustReleased) S->holding = false;
-
-    if (S->holding) {
-        S->pos.x += MouseDir().x;
-        S->pos.y += MouseDir().y;
-    }
+export void Init() {
+    S->text = NewText("Hello. This is a sentence. Bye!", "data\\jetbrains.ttf", 12, 15);
 }
 
+export void Update() {}
+
 export void Draw() {
-    DrawRectangle((Rect){S->pos.x, S->pos.y, 200, 300}, 0, WHITE, 0);
-    persist bool bla = false;
-    GuiToggle((Rect){50, 50, 50, 50}, &bla);
+    DrawText(S->text, (v2){100, 100});
 }
