@@ -54,6 +54,7 @@ typedef enum {
     SHADER_Rect,
     SHADER_Circle,
     SHADER_Sdf,
+    SHADER_Tiles,
     SHADER_COUNT,
 } BuiltinShaders;
 

@@ -438,6 +438,8 @@ GraphicsCtx InitGraphics(WindowCtx *ctx, const GameSettings *settings) {
         ShaderFromPath("shaders\\default2d.vert", "shaders\\circle.frag");
     result.builtinShaders[SHADER_Sdf] =
         ShaderFromPath("shaders\\shapes.vert", "shaders\\shapes.frag");
+    result.builtinShaders[SHADER_Tiles] =
+        ShaderFromPath("shaders\\default2d.vert", "shaders\\tiles.frag");
 
     result.builtinVAOs[VAO_CUBE]   = LoadSquareMesh();
     result.builtinVAOs[VAO_SQUARE] = LoadSquareMesh();
